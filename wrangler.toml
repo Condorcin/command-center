@@ -1,0 +1,14 @@
+name = "orbix"
+main = "src/index.ts"
+compatibility_date = "2024-01-15"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+ENVIRONMENT = "development"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "orbix-db"
+database_id = "962289a8-ffe6-4d2e-ae8e-40bce8b166f1"
+preview_database_id = "962289a8-ffe6-4d2e-ae8e-40bce8b166f1"
+

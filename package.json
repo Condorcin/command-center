@@ -1,0 +1,31 @@
+{
+  "name": "orbix",
+  "version": "0.1.0",
+  "description": "SaaS platform bootstrap with authentication - Cloudflare Workers",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:migrate": "wrangler d1 migrations apply orbix-db",
+    "db:migrate:local": "wrangler d1 migrations apply orbix-db --local",
+    "db:create": "wrangler d1 create orbix-db",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "cloudflare-workers",
+    "saas",
+    "authentication"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241127.0",
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3",
+    "wrangler": "^3.22.0"
+  },
+  "dependencies": {
+    "@noble/hashes": "^1.3.3"
+  }
+}
+

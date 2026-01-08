@@ -1,0 +1,6 @@
+# Copy this file to .dev.vars and fill in your values
+# This file is for local development only
+
+# Session secret (generate a random string)
+SESSION_SECRET=your-random-secret-key-here
+
