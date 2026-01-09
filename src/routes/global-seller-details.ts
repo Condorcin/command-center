@@ -6,6 +6,7 @@ import { UserRepository } from '../repositories/user.repository';
 import { SessionRepository } from '../repositories/session.repository';
 import { AuthService } from '../services/auth.service';
 import { errorResponse } from '../utils/response';
+import { logger } from '../utils/logger';
 
 export interface Env {
   DB: D1Database;
@@ -992,7 +993,7 @@ export async function globalSellerDetailsHandler(request: Request, env: Env): Pr
         }
         
         const data = await response.json();
-        console.log('Items count response:', data);
+        // Debug: Items count response
         
         if (data.success && data.data && data.data.count) {
           const count = data.data.count;
@@ -1069,20 +1070,13 @@ export async function globalSellerDetailsHandler(request: Request, env: Env): Pr
           { credentials: 'include' }
         );
         
-        console.log('[LOAD] Request URL:', response.url || 'N/A');
-        
+        // Debug: Request URL
         if (response.ok) {
           const data = await response.json();
           if (data.success && data.data.items) {
             const items = data.data.items || [];
-            console.log('[LOAD] Loaded items from DB:', items.length);
-            console.log('[LOAD] Status distribution:', {
-              active: items.filter(i => i.status === 'active').length,
-              paused: items.filter(i => i.status === 'paused').length,
-              closed: items.filter(i => i.status === 'closed').length,
-              other: items.filter(i => i.status && !['active', 'paused', 'closed'].includes(i.status)).length,
-              noStatus: items.filter(i => !i.status).length
-            });
+            // Debug: Loaded items from DB
+            // Debug: Status distribution
             
             allLoadedItems = items;
             totalItems = data.data.paging?.total || items.length;
@@ -1090,7 +1084,6 @@ export async function globalSellerDetailsHandler(request: Request, env: Env): Pr
             tableContainer.style.display = 'block';
             
             // Apply current filter and sort
-            console.log('[LOAD] Applying initial filter');
             filterTableByStatus();
             
             // Show continue button if there are items
@@ -1284,7 +1277,7 @@ export async function globalSellerDetailsHandler(request: Request, env: Env): Pr
                 // If 503, wait and retry
                 if (response.status === 503 && attempt < retries - 1) {
                   const waitTime = Math.min(5 * (attempt + 1), 15); // Max 15 seconds
-                  console.log(\`[LOAD] Service unavailable (503), waiting \${waitTime}s before retry (attempt \${attempt + 1}/\${retries})...\`);
+                  // Debug: Service unavailable, waiting before retry
                   alert.innerHTML = \`
                     <span class="spinner"></span>
                     <strong>Servicio temporalmente no disponible</strong> | 
@@ -1305,7 +1298,7 @@ export async function globalSellerDetailsHandler(request: Request, env: Env): Pr
               lastError = fetchError;
               if (attempt < retries - 1) {
                 const waitTime = Math.min(2 * (attempt + 1), 10); // Max 10 seconds
-                console.log(\`[LOAD] Network error, waiting \${waitTime}s before retry (attempt \${attempt + 1}/\${retries})...\`);
+                // Debug: Network error, waiting before retry
                 alert.innerHTML = \`
                   <span class="spinner"></span>
                   <strong>Error de conexión</strong> | 
@@ -1679,7 +1672,7 @@ export async function globalSellerDetailsHandler(request: Request, env: Env): Pr
     });
   } catch (error) {
     if (error instanceof Error && error.message === 'Unauthorized') {
-      return Response.redirect(new URL('/auth/login', request.url), 302);
+      return Response.redirect(new URL('/auth/login', request.url).toString(), 302);
     }
     return errorResponse('Internal server error', 500);
   }

@@ -46,7 +46,7 @@ export function handleError(error: unknown): Response {
   if (error instanceof Error) {
     // Validation errors
     if (error.name === 'ValidationException') {
-      const validationError = error as { errors: Array<{ field: string; message: string }> };
+      const validationError = error as unknown as { errors: Array<{ field: string; message: string }> };
       return errorResponse(
         'Validation failed',
         400,
@@ -66,7 +66,4 @@ export function handleError(error: unknown): Response {
 
   return errorResponse('An unexpected error occurred', 500, 'UNKNOWN_ERROR');
 }
-
-
-
 

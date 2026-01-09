@@ -8,6 +8,9 @@ import { UserRepository } from '../repositories/user.repository';
 import { SessionRepository } from '../repositories/session.repository';
 import { AuthService } from '../services/auth.service';
 import { successResponse, errorResponse, handleError } from '../utils/response';
+import { logger } from '../utils/logger';
+import { ML_API_LIMITS, VALID_ITEM_STATUSES, VALID_ORDER_OPTIONS, PAGINATION, type ItemStatus, type OrderOption } from '../config/constants';
+import { Item } from '../db/schema';
 
 export interface Env {
   DB: D1Database;
@@ -64,7 +67,7 @@ export async function getItemsCountHandler(request: Request, env: Env): Promise<
       }
     } catch (error) {
       // Fallback to ML API if database query fails
-      console.warn('Failed to get count from database, falling back to ML API:', error);
+      logger.warn('Failed to get count from database, falling back to ML API:', error);
       const mlCount = await itemsService.getItemsCount(
         globalSeller.ml_user_id,
         globalSeller.ml_access_token
@@ -113,18 +116,31 @@ export async function getItemsHandler(request: Request, env: Env): Promise<Respo
       return errorResponse('Access denied', 403, 'FORBIDDEN');
     }
 
-    // Get query parameters
-    const status = url.searchParams.get('status') as 'active' | 'paused' | 'closed' | 'all' || 'active';
-    let offset = parseInt(url.searchParams.get('offset') || '0', 10);
-    let limit = parseInt(url.searchParams.get('limit') || '50', 10);
+    // Get and validate query parameters
+    const statusParam = url.searchParams.get('status');
+    const status: ItemStatus = (statusParam && VALID_ITEM_STATUSES.includes(statusParam as ItemStatus)) 
+      ? (statusParam as ItemStatus) 
+      : 'active';
+    
+    const offsetParam = url.searchParams.get('offset');
+    let offset = typeof offsetParam === 'string' && !isNaN(parseInt(offsetParam, 10))
+      ? parseInt(offsetParam, 10)
+      : 0;
+    offset = Math.max(0, Math.min(offset, ML_API_LIMITS.MAX_OFFSET));
+    
+    const limitParam = url.searchParams.get('limit');
+    let limit = typeof limitParam === 'string' && !isNaN(parseInt(limitParam, 10))
+      ? parseInt(limitParam, 10)
+      : PAGINATION.DEFAULT_PAGE_SIZE;
+    limit = Math.max(1, Math.min(limit, PAGINATION.MAX_PAGE_SIZE));
+    
     const search = url.searchParams.get('search') || undefined;
     const useDatabase = url.searchParams.get('source') !== 'ml'; // Default to database
 
-    // Validate and limit parameters
-    offset = Math.max(0, Math.min(offset, 10000)); // Max offset of 10,000
-    limit = Math.max(1, Math.min(limit, 100)); // Max 100 for database queries
-
-    const order = url.searchParams.get('order') as 'start_time_desc' | 'start_time_asc' | 'price_desc' | 'price_asc' || 'start_time_desc';
+    const orderParam = url.searchParams.get('order');
+    const order: OrderOption = (orderParam && VALID_ORDER_OPTIONS.includes(orderParam as OrderOption))
+      ? (orderParam as OrderOption)
+      : 'start_time_desc';
 
     try {
       // Try database first if enabled
@@ -151,13 +167,13 @@ export async function getItemsHandler(request: Request, env: Env): Promise<Respo
         
         // Always use synced_at for database queries to show latest synced items first
         // This ensures we see newly synced items immediately, even if start_time is null
-        if (orderBy === 'start_time' || (orderBy === 'updated_at' && offset === 0)) {
+        if (orderBy === 'start_time') {
           orderBy = 'synced_at';
           orderDir = 'DESC';
         }
 
         const queryStatus = status !== 'all' ? status : undefined;
-        console.log(`Querying database: status=${queryStatus}, limit=${limit}, offset=${offset}, orderBy=${orderBy}`);
+        logger.debug(`Querying database: status=${queryStatus}, limit=${limit}, offset=${offset}, orderBy=${orderBy}`);
         
         const dbResult = await itemRepo.findByGlobalSellerId(globalSeller.id, {
           status: queryStatus,
@@ -168,7 +184,7 @@ export async function getItemsHandler(request: Request, env: Env): Promise<Respo
           orderDir,
         });
         
-        console.log(`Database query result: ${dbResult.items.length} items, total: ${dbResult.total}`);
+        logger.debug(`Database query result: ${dbResult.items.length} items, total: ${dbResult.total}`);
 
         // Convert to response format
         const items = dbResult.items.map(item => ({
@@ -266,7 +282,7 @@ export async function getItemsHandler(request: Request, env: Env): Promise<Respo
 
       return successResponse(response);
     } catch (error) {
-      console.error('Error fetching items:', error);
+      logger.error('Error fetching items:', error);
       
       // Provide helpful error message
       if (error instanceof Error) {
@@ -401,7 +417,7 @@ export async function getSavedItemsHandler(request: Request, env: Env): Promise<
     }
     offset = Math.max(0, offset);
 
-    console.log(`[GET SAVED] Fetching items: status=${status || 'ALL (no filter)'}, limit=${limit}, offset=${offset}`);
+    logger.debug(`[GET SAVED] Fetching items: status=${status || 'ALL (no filter)'}, limit=${limit}, offset=${offset}`);
 
     // Get items from database - pass undefined for status to get all items
     const dbResult = await itemRepo.findByGlobalSellerId(globalSeller.id, {
@@ -412,14 +428,14 @@ export async function getSavedItemsHandler(request: Request, env: Env): Promise<
       orderDir,
     });
     
-    console.log(`[GET SAVED] Found ${dbResult.items.length} items, total: ${dbResult.total}`);
+    logger.debug(`[GET SAVED] Found ${dbResult.items.length} items, total: ${dbResult.total}`);
     if (dbResult.items.length > 0) {
       const statusCounts = {
         active: dbResult.items.filter(i => i.status === 'active').length,
         paused: dbResult.items.filter(i => i.status === 'paused').length,
         closed: dbResult.items.filter(i => i.status === 'closed').length,
       };
-      console.log(`[GET SAVED] Status distribution in response:`, statusCounts);
+      logger.debug(`[GET SAVED] Status distribution in response:`, statusCounts);
     }
 
     // Convert to response format
@@ -465,7 +481,7 @@ export async function getSavedItemsHandler(request: Request, env: Env): Promise<
  */
 export async function syncItemsHandler(request: Request, env: Env): Promise<Response> {
   try {
-    console.log('[SYNC] syncItemsHandler called');
+    logger.debug('[SYNC] syncItemsHandler called');
     const userRepo = new UserRepository(env.DB);
     const sessionRepo = new SessionRepository(env.DB);
     const authService = new AuthService(userRepo, sessionRepo);
@@ -475,56 +491,59 @@ export async function syncItemsHandler(request: Request, env: Env): Promise<Resp
     const itemsService = new MercadoLibreItemsService();
     const itemRepo = new ItemRepository(env.DB);
 
-    console.log('[SYNC] Authenticating user...');
+    logger.debug('[SYNC] Authenticating user...');
     const user = await requireAuth(request, env, authService);
-    console.log('[SYNC] User authenticated:', user.id);
+    logger.debug('[SYNC] User authenticated:', user.id);
 
     const url = new URL(request.url);
     const id = url.pathname.split('/')[3]; // /api/global-sellers/:id/items/sync
 
     if (!id) {
-      console.error('[SYNC] Missing Global Seller ID');
+      logger.error('[SYNC] Missing Global Seller ID');
       return errorResponse('Global Seller ID is required', 400, 'MISSING_ID');
     }
 
-    console.log('[SYNC] Fetching Global Seller:', id);
+    logger.debug('[SYNC] Fetching Global Seller:', id);
     const globalSeller = await globalSellerService.getById(id);
 
     if (!globalSeller) {
-      console.error('[SYNC] Global Seller not found:', id);
+      logger.error('[SYNC] Global Seller not found:', id);
       return errorResponse('Global Seller not found', 404, 'NOT_FOUND');
     }
 
     if (globalSeller.user_id !== user.id) {
-      console.error('[SYNC] Access denied for user:', user.id, 'Global Seller:', globalSeller.id);
+      logger.error('[SYNC] Access denied for user:', user.id, 'Global Seller:', globalSeller.id);
       return errorResponse('Access denied', 403, 'FORBIDDEN');
     }
 
-    const body = await request.json().catch(() => ({}));
-    const status = body.status || 'all';
+    const body = await request.json().catch(() => ({})) as { status?: string };
+    const statusParam = body?.status;
+    const status: ItemStatus = (typeof statusParam === 'string' && VALID_ITEM_STATUSES.includes(statusParam as ItemStatus))
+      ? (statusParam as ItemStatus)
+      : 'all';
 
-    console.log(`[SYNC] Received sync request for Global Seller ${globalSeller.id}, status: ${status}, ml_user_id: ${globalSeller.ml_user_id}`);
+    logger.debug(`[SYNC] Received sync request for Global Seller ${globalSeller.id}, status: ${status}, ml_user_id: ${globalSeller.ml_user_id}`);
 
     // Start sync in background with batch processing (5 items in parallel)
     // This gets full metadata for each item and saves it to database
     (async () => {
       try {
-        console.log(`[SYNC] Starting sync for Global Seller ${globalSeller.id}, status: ${status}`);
+        logger.debug(`[SYNC] Starting sync for Global Seller ${globalSeller.id}, status: ${status}`);
         let syncedCount = 0;
         let offset = 0;
-        const limit = 50;
-        const batchSize = 100; // Save in batches of 100 items to DB
+        const limit = ML_API_LIMITS.MAX_ITEMS_PER_PAGE;
+        const batchSize = ML_API_LIMITS.BATCH_SIZE; // Save in batches to DB
 
         while (true) {
           // Get item IDs from ML
-          console.log(`Fetching items from ML API: offset=${offset}, limit=${limit}`);
+          logger.debug(`Fetching items from ML API: offset=${offset}, limit=${limit}`);
           const searchResult = await itemsService.searchItems(
             globalSeller.ml_user_id,
             globalSeller.ml_access_token,
             { status, offset, limit }
           );
           
-          console.log(`Got ${searchResult.results?.length || 0} item IDs from ML API`);
+          logger.debug(`Got ${searchResult.results?.length || 0} item IDs from ML API`);
 
           if (!searchResult.results || searchResult.results.length === 0) {
             break;
@@ -540,7 +559,7 @@ export async function syncItemsHandler(request: Request, env: Env): Promise<Resp
           // This is more efficient than calling /items/{id} for each item
           const itemsToSave: any[] = [];
           
-          console.log(`Processing ${itemsDetails.length} items from bulk response`);
+          logger.debug(`Processing ${itemsDetails.length} items from bulk response`);
           
           for (const result of itemsDetails) {
             if (result.code === 200 && 'id' in result.body) {
@@ -569,11 +588,11 @@ export async function syncItemsHandler(request: Request, env: Env): Promise<Resp
                 metadata: mlItem, // Store complete metadata (will be stringified by repository)
               });
             } else {
-              console.warn(`Skipping item with code ${result.code}:`, result.body);
+              logger.warn(`Skipping item with code ${result.code}:`, result.body);
             }
           }
           
-          console.log(`Prepared ${itemsToSave.length} items to save to database`);
+          logger.debug(`Prepared ${itemsToSave.length} items to save to database`);
           
           // Save items in batches to database for better performance
           if (itemsToSave.length > 0) {
@@ -581,38 +600,38 @@ export async function syncItemsHandler(request: Request, env: Env): Promise<Resp
             for (let i = 0; i < itemsToSave.length; i += batchSize) {
               const batch = itemsToSave.slice(i, i + batchSize);
               try {
-                console.log(`Attempting to save batch ${i}-${i + batch.length} (${batch.length} items) to database`);
+                logger.debug(`Attempting to save batch ${i}-${i + batch.length} (${batch.length} items) to database`);
                 await itemRepo.bulkUpsert(batch);
                 syncedCount += batch.length;
-                console.log(`✓ Successfully synced ${syncedCount} items (batch of ${batch.length} saved) for Global Seller ${globalSeller.id}`);
+                logger.debug(`✓ Successfully synced ${syncedCount} items (batch of ${batch.length} saved) for Global Seller ${globalSeller.id}`);
               } catch (error) {
-                console.error(`✗ Error saving batch ${i}-${i + batch.length}:`, error);
-                console.error('Error details:', error instanceof Error ? error.message : String(error));
-                console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+                logger.error(`✗ Error saving batch ${i}-${i + batch.length}:`, error);
+                logger.error('Error details:', error instanceof Error ? error.message : String(error));
+                logger.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
                 // Continue with next batch even if one fails
               }
             }
           } else {
-            console.log(`No items to save for offset ${offset} (got ${itemsDetails.length} results from ML)`);
+            logger.debug(`No items to save for offset ${offset} (got ${itemsDetails.length} results from ML)`);
           }
 
           // Check if we've reached the limit or end
-          if (offset + limit >= 10000 || searchResult.results.length < limit) {
+          if (offset + limit >= ML_API_LIMITS.MAX_OFFSET || searchResult.results.length < limit) {
             break;
           }
 
           offset += limit;
         }
 
-        console.log(`[SYNC] Sync completed: ${syncedCount} items synced with full metadata for Global Seller ${globalSeller.id}`);
+        logger.debug(`[SYNC] Sync completed: ${syncedCount} items synced with full metadata for Global Seller ${globalSeller.id}`);
       } catch (error) {
-        console.error('[SYNC] Sync error:', error);
-        console.error('[SYNC] Error stack:', error instanceof Error ? error.stack : 'No stack trace');
-        console.error('[SYNC] Error details:', error);
+        logger.error('[SYNC] Sync error:', error);
+        logger.error('[SYNC] Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+        logger.error('[SYNC] Error details:', error);
       }
     })();
     
-    console.log(`[SYNC] Background sync task started for Global Seller ${globalSeller.id}`);
+    logger.debug(`[SYNC] Background sync task started for Global Seller ${globalSeller.id}`);
 
     return successResponse({
       message: 'Sync started in background. Processing items in batches of 5 to get full metadata.',
@@ -659,8 +678,8 @@ export async function checkItemsHandler(request: Request, env: Env): Promise<Res
       return errorResponse('Access denied', 403, 'FORBIDDEN');
     }
 
-    const body = await request.json().catch(() => ({}));
-    const mlItemIds = body.ml_item_ids || [];
+    const body = await request.json().catch(() => ({})) as { ml_item_ids?: string[] };
+    const mlItemIds = body?.ml_item_ids || [];
 
     if (!Array.isArray(mlItemIds) || mlItemIds.length === 0) {
       return errorResponse('ml_item_ids array is required', 400, 'MISSING_IDS');
@@ -716,27 +735,42 @@ export async function loadItemsHandler(request: Request, env: Env): Promise<Resp
       return errorResponse('Access denied', 403, 'FORBIDDEN');
     }
 
-    const body = await request.json().catch(() => ({}));
-    const status = body.status || 'active'; // Default to 'active' if not provided
-    const order = body.order || 'start_time_desc';
-    const page = body.page || 0; // Page number (0-based)
-    const limit = 50; // Max items per page from ML API
-    const offset = page * limit;
+    const body = await request.json().catch(() => ({})) as { status?: string; order?: string; page?: number | string };
     
-    // Validate status - ML API doesn't accept 'all', use 'active' as fallback
-    const validStatus = (status === 'active' || status === 'paused' || status === 'closed') ? status : 'active';
+    // Validate and sanitize status
+    const statusParam = body?.status;
+    const validStatus: ItemStatus = (typeof statusParam === 'string' && VALID_ITEM_STATUSES.includes(statusParam as ItemStatus) && statusParam !== 'all')
+      ? (statusParam as ItemStatus)
+      : 'active'; // ML API doesn't accept 'all', use 'active' as fallback
+    
+    // Validate and sanitize order
+    const orderParam = body?.order;
+    const order: OrderOption = (typeof orderParam === 'string' && VALID_ORDER_OPTIONS.includes(orderParam as OrderOption))
+      ? (orderParam as OrderOption)
+      : 'start_time_desc';
+    
+    // Validate and sanitize page
+    const pageParam = body?.page;
+    const page = (typeof pageParam === 'number' && pageParam >= 0 && Number.isInteger(pageParam))
+      ? pageParam
+      : (typeof pageParam === 'string' && !isNaN(parseInt(pageParam, 10)) && parseInt(pageParam, 10) >= 0)
+        ? parseInt(pageParam, 10)
+        : 0;
+    
+    const limit = ML_API_LIMITS.MAX_ITEMS_PER_PAGE;
+    const offset = page * limit;
 
     // Validate offset limit
-    if (offset >= 10000) {
-      return errorResponse('Límite de paginación alcanzado. ML API no permite offsets mayores a 10,000.', 400, 'MAX_OFFSET_REACHED');
+    if (offset >= ML_API_LIMITS.MAX_OFFSET) {
+      return errorResponse(`Límite de paginación alcanzado. ML API no permite offsets mayores a ${ML_API_LIMITS.MAX_OFFSET}.`, 400, 'MAX_OFFSET_REACHED');
     }
 
-    console.log(`[LOAD] Loading page ${page} (offset ${offset}) for Global Seller ${globalSeller.id}`);
-    console.log(`[LOAD] Parameters: status=${status}, order=${order}, ml_user_id=${globalSeller.ml_user_id}`);
+    logger.debug(`[LOAD] Loading page ${page} (offset ${offset}) for Global Seller ${globalSeller.id}`);
+    logger.debug(`[LOAD] Parameters: status=${validStatus}, order=${order}, ml_user_id=${globalSeller.ml_user_id}`);
 
     try {
       // 1. Get item IDs from ML API for this page
-      console.log(`[LOAD] Calling searchItems with: ml_user_id=${globalSeller.ml_user_id}, status=${validStatus}, offset=${offset}, limit=${limit}, order=${order}`);
+      logger.debug(`[LOAD] Calling searchItems with: ml_user_id=${globalSeller.ml_user_id}, status=${validStatus}, offset=${offset}, limit=${limit}, order=${order}`);
       let searchResult;
       try {
         searchResult = await itemsService.searchItems(
@@ -745,9 +779,9 @@ export async function loadItemsHandler(request: Request, env: Env): Promise<Resp
           { status: validStatus, offset, limit, order }
         );
       } catch (searchError) {
-        console.error('[LOAD] Error in searchItems:', searchError);
-        console.error('[LOAD] Error details:', searchError instanceof Error ? searchError.message : String(searchError));
-        console.error('[LOAD] Error stack:', searchError instanceof Error ? searchError.stack : 'No stack trace');
+        logger.error('[LOAD] Error in searchItems:', searchError);
+        logger.error('[LOAD] Error details:', searchError instanceof Error ? searchError.message : String(searchError));
+        logger.error('[LOAD] Error stack:', searchError instanceof Error ? searchError.stack : 'No stack trace');
         
         // Provide more specific error messages
         const errorMessage = searchError instanceof Error ? searchError.message : String(searchError);
@@ -762,7 +796,7 @@ export async function loadItemsHandler(request: Request, env: Env): Promise<Resp
         throw new Error(`Error al buscar items en ML API: ${errorMessage}`);
       }
 
-      console.log(`[LOAD] searchItems returned:`, {
+      logger.debug(`[LOAD] searchItems returned:`, {
         resultsCount: searchResult.results?.length || 0,
         total: searchResult.paging?.total || 0,
         hasResults: !!searchResult.results && searchResult.results.length > 0
@@ -771,11 +805,11 @@ export async function loadItemsHandler(request: Request, env: Env): Promise<Resp
       if (!searchResult.results || searchResult.results.length === 0) {
         // Check if it's a pagination limit issue
         if (searchResult.paginationLimitReached) {
-          console.log(`[LOAD] ML API pagination limit reached at offset ${offset}`);
+          logger.debug(`[LOAD] ML API pagination limit reached at offset ${offset}`);
           
           // Aggressive strategy: try multiple offsets and orders to get more items
           if (offset >= 1000) {
-            console.log(`[LOAD] Attempting aggressive strategy to get more items beyond pagination limit`);
+            logger.debug(`[LOAD] Attempting aggressive strategy to get more items beyond pagination limit`);
             
             const strategies = [
               // Try smaller offsets (going backwards)
@@ -796,7 +830,7 @@ export async function loadItemsHandler(request: Request, env: Env): Promise<Resp
               if (strategy.offset < 0) continue;
               
               try {
-                console.log(`[LOAD] Trying strategy: ${strategy.name} (offset=${strategy.offset}, order=${strategy.order})`);
+                logger.debug(`[LOAD] Trying strategy: ${strategy.name} (offset=${strategy.offset}, order=${strategy.order})`);
                 
                 const alternativeResult = await itemsService.searchItems(
                   globalSeller.ml_user_id,
@@ -810,14 +844,14 @@ export async function loadItemsHandler(request: Request, env: Env): Promise<Resp
                 );
                 
                 if (alternativeResult.results && alternativeResult.results.length > 0 && !alternativeResult.paginationLimitReached) {
-                  console.log(`[LOAD] Strategy ${strategy.name} worked! Got ${alternativeResult.results.length} item IDs`);
+                  logger.debug(`[LOAD] Strategy ${strategy.name} worked! Got ${alternativeResult.results.length} item IDs`);
                   
                   // Check which items already exist
                   const existingIds = await itemRepo.findExistingMlItemIds(globalSeller.id, alternativeResult.results);
                   const newItemIds = alternativeResult.results.filter(id => !existingIds.has(id));
                   
                   if (newItemIds.length > 0) {
-                    console.log(`[LOAD] Found ${newItemIds.length} new items via strategy ${strategy.name}`);
+                    logger.debug(`[LOAD] Found ${newItemIds.length} new items via strategy ${strategy.name}`);
                     
                     // Get item details using bulk endpoint (in chunks of 20)
                     const itemsDetails = await itemsService.getItemsBulk(
@@ -858,10 +892,10 @@ export async function loadItemsHandler(request: Request, env: Env): Promise<Resp
                     await new Promise(resolve => setTimeout(resolve, 200));
                   }
                 } else if (alternativeResult.paginationLimitReached) {
-                  console.log(`[LOAD] Strategy ${strategy.name} also hit pagination limit, skipping`);
+                  logger.debug(`[LOAD] Strategy ${strategy.name} also hit pagination limit, skipping`);
                 }
               } catch (altError) {
-                console.error(`[LOAD] Strategy ${strategy.name} failed:`, altError);
+                logger.error(`[LOAD] Strategy ${strategy.name} failed:`, altError);
                 // Continue with next strategy
               }
             }
@@ -869,7 +903,7 @@ export async function loadItemsHandler(request: Request, env: Env): Promise<Resp
             if (allItemsToSave.length > 0) {
               // Save all items in bulk
               await itemRepo.bulkUpsert(allItemsToSave);
-              console.log(`[LOAD] Saved ${allItemsToSave.length} items via aggressive strategy`);
+              logger.debug(`[LOAD] Saved ${allItemsToSave.length} items via aggressive strategy`);
               
               // Return the items we got
               return successResponse({
@@ -914,7 +948,7 @@ export async function loadItemsHandler(request: Request, env: Env): Promise<Resp
           });
         }
         
-        console.log(`[LOAD] No results found for page ${page}, returning empty response`);
+        logger.debug(`[LOAD] No results found for page ${page}, returning empty response`);
         return successResponse({
           items: [],
           paging: {
@@ -929,16 +963,16 @@ export async function loadItemsHandler(request: Request, env: Env): Promise<Resp
         });
       }
 
-      console.log(`[LOAD] Got ${searchResult.results.length} item IDs from ML API`);
+      logger.debug(`[LOAD] Got ${searchResult.results.length} item IDs from ML API`);
 
       // 2. Check which items already exist in database
-      console.log(`[LOAD] Checking which items already exist in database...`);
+      logger.debug(`[LOAD] Checking which items already exist in database...`);
       const existingIds = await itemRepo.findExistingMlItemIds(globalSeller.id, searchResult.results);
-      console.log(`[LOAD] Found ${existingIds.size} items already in database out of ${searchResult.results.length} total`);
+      logger.debug(`[LOAD] Found ${existingIds.size} items already in database out of ${searchResult.results.length} total`);
 
       // 3. Filter out items that already exist - only fetch details for new items
       const newItemIds = searchResult.results.filter(id => !existingIds.has(id));
-      console.log(`[LOAD] Need to fetch details for ${newItemIds.length} new items (skipping ${existingIds.size} existing)`);
+      logger.debug(`[LOAD] Need to fetch details for ${newItemIds.length} new items (skipping ${existingIds.size} existing)`);
 
       // 4. Get item details in bulk only for new items (max 20 per request)
       let itemsDetails: any[] = [];
@@ -949,14 +983,14 @@ export async function loadItemsHandler(request: Request, env: Env): Promise<Resp
             globalSeller.ml_access_token
           );
         } catch (bulkError) {
-          console.error('[LOAD] Error in getItemsBulk:', bulkError);
-          console.error('[LOAD] Error details:', bulkError instanceof Error ? bulkError.message : String(bulkError));
-          console.error('[LOAD] Error stack:', bulkError instanceof Error ? bulkError.stack : 'No stack trace');
+          logger.error('[LOAD] Error in getItemsBulk:', bulkError);
+          logger.error('[LOAD] Error details:', bulkError instanceof Error ? bulkError.message : String(bulkError));
+          logger.error('[LOAD] Error stack:', bulkError instanceof Error ? bulkError.stack : 'No stack trace');
           throw new Error(`Error al obtener detalles de items: ${bulkError instanceof Error ? bulkError.message : String(bulkError)}`);
         }
-        console.log(`[LOAD] Got ${itemsDetails.length} item details from bulk API`);
+        logger.debug(`[LOAD] Got ${itemsDetails.length} item details from bulk API`);
       } else {
-        console.log(`[LOAD] All items already exist in database, skipping API call`);
+        logger.debug(`[LOAD] All items already exist in database, skipping API call`);
       }
 
       // 5. Get existing items from database to return them in response
@@ -1055,7 +1089,7 @@ export async function loadItemsHandler(request: Request, env: Env): Promise<Resp
             end_time: mlItem.end_time,
           });
         } else {
-          console.warn(`[LOAD] Skipping item with code ${result.code}:`, result.body);
+          logger.warn(`[LOAD] Skipping item with code ${result.code}:`, result.body);
         }
       }
 
@@ -1071,18 +1105,18 @@ export async function loadItemsHandler(request: Request, env: Env): Promise<Resp
       let savedCount = 0;
       if (itemsToSave.length > 0) {
         try {
-          console.log(`[LOAD] Attempting to save ${itemsToSave.length} items to database...`);
+          logger.debug(`[LOAD] Attempting to save ${itemsToSave.length} items to database...`);
           await itemRepo.bulkUpsert(itemsToSave);
           savedCount = itemsToSave.length;
-          console.log(`[LOAD] ✓ Saved ${savedCount} items to database for page ${page}`);
+          logger.debug(`[LOAD] ✓ Saved ${savedCount} items to database for page ${page}`);
         } catch (dbError) {
-          console.error(`[LOAD] ✗ Error saving items to database:`, dbError);
-          console.error('[LOAD] DB Error details:', dbError instanceof Error ? dbError.message : String(dbError));
-          console.error('[LOAD] DB Error stack:', dbError instanceof Error ? dbError.stack : 'No stack trace');
+          logger.error(`[LOAD] ✗ Error saving items to database:`, dbError);
+          logger.error('[LOAD] DB Error details:', dbError instanceof Error ? dbError.message : String(dbError));
+          logger.error('[LOAD] DB Error stack:', dbError instanceof Error ? dbError.stack : 'No stack trace');
           // Continue even if save fails, still return items
         }
       } else {
-        console.log(`[LOAD] No items to save (itemsToSave.length = 0)`);
+        logger.debug(`[LOAD] No items to save (itemsToSave.length = 0)`);
       }
 
       return successResponse({
@@ -1094,13 +1128,13 @@ export async function loadItemsHandler(request: Request, env: Env): Promise<Resp
         },
         page,
         saved: savedCount,
-        hasMore: offset + limit < Math.min(10000, searchResult.paging?.total || 0),
+        hasMore: offset + limit < Math.min(ML_API_LIMITS.MAX_OFFSET, searchResult.paging?.total || 0),
       });
     } catch (error) {
-      console.error('[LOAD] Error in inner try-catch:', error);
-      console.error('[LOAD] Error type:', error?.constructor?.name || typeof error);
-      console.error('[LOAD] Error message:', error instanceof Error ? error.message : String(error));
-      console.error('[LOAD] Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+      logger.error('[LOAD] Error in inner try-catch:', error);
+      logger.error('[LOAD] Error type:', error?.constructor?.name || typeof error);
+      logger.error('[LOAD] Error message:', error instanceof Error ? error.message : String(error));
+      logger.error('[LOAD] Error stack:', error instanceof Error ? error.stack : 'No stack trace');
       if (error instanceof Error) {
         if (error.message.includes('429') || error.message.includes('rate limit')) {
           return errorResponse('Límite de rate limit alcanzado. Por favor espera unos momentos e intenta de nuevo.', 429, 'RATE_LIMIT');
@@ -1109,10 +1143,10 @@ export async function loadItemsHandler(request: Request, env: Env): Promise<Resp
       throw error;
     }
   } catch (error) {
-    console.error('[LOAD] Error in outer catch:', error);
-    console.error('[LOAD] Error type:', error?.constructor?.name || typeof error);
-    console.error('[LOAD] Error message:', error instanceof Error ? error.message : String(error));
-    console.error('[LOAD] Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+    logger.error('[LOAD] Error in outer catch:', error);
+    logger.error('[LOAD] Error type:', error?.constructor?.name || typeof error);
+    logger.error('[LOAD] Error message:', error instanceof Error ? error.message : String(error));
+    logger.error('[LOAD] Error stack:', error instanceof Error ? error.stack : 'No stack trace');
     if (error instanceof Error && error.message === 'Unauthorized') {
       return errorResponse('Unauthorized', 401, 'UNAUTHORIZED');
     }

@@ -63,7 +63,7 @@ export class MercadoLibreAPIService {
     });
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ message: 'Unknown error' }));
+      const error = await response.json().catch(() => ({ message: 'Unknown error' })) as { message?: string };
       throw new Error(`Failed to fetch user info: ${error.message || response.statusText}`);
     }
 

@@ -1114,7 +1114,7 @@ export async function dashboardHandler(request: Request, env: Env): Promise<Resp
     });
   } catch (error) {
     if (error instanceof Error && error.message === 'Unauthorized') {
-      return Response.redirect(new URL('/auth/login', request.url), 302);
+      return Response.redirect(new URL('/auth/login', request.url).toString(), 302);
     }
     return errorResponse('Internal server error', 500);
   }

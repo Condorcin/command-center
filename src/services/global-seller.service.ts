@@ -151,8 +151,8 @@ export class GlobalSellerService {
       };
     } catch (error) {
       // If API call fails, still update the global seller but without ML info
-      console.error('Failed to fetch ML user info:', error);
-      throw new Error(`Failed to fetch user information from Mercado Libre: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      throw new Error(`Failed to fetch user information from Mercado Libre: ${errorMessage}`);
     }
 
     // Update global seller with ML information
@@ -172,7 +172,4 @@ export class GlobalSellerService {
     await this.globalSellerRepo.delete(id);
   }
 }
-
-
-
 

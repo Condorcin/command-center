@@ -3,6 +3,9 @@
  * Implements rate limiting, batch processing, and best practices for scalability
  */
 
+import { logger } from '../utils/logger';
+import { ML_API_LIMITS, RETRY_CONFIG, VALID_ITEM_STATUSES, VALID_ORDER_OPTIONS, type ItemStatus, type OrderOption } from '../config/constants';
+
 export interface MLItem {
   id: string;
   site_id: string;
@@ -24,7 +27,7 @@ export interface MLItem {
 }
 
 export interface MLItemsSearchResponse {
-  seller_id: string;
+  seller_id?: string;
   results: string[]; // Array of item IDs
   paging: {
     total: number;
@@ -32,6 +35,9 @@ export interface MLItemsSearchResponse {
     limit: number;
   };
   paginationLimitReached?: boolean; // Indicates if ML API limit was reached
+  query?: unknown;
+  orders?: unknown[];
+  available_orders?: unknown[];
 }
 
 export interface MLItemsBulkResponse {
@@ -41,8 +47,8 @@ export interface MLItemsBulkResponse {
 
 export class MercadoLibreItemsService {
   private readonly BASE_URL = 'https://api.mercadolibre.com';
-  private readonly MAX_ITEMS_PER_REQUEST = 20; // ML limit for bulk requests (ids parameter)
-  private readonly RATE_LIMIT_DELAY = 100; // ms between requests to respect rate limits
+  private readonly MAX_ITEMS_PER_REQUEST = ML_API_LIMITS.MAX_ITEMS_PER_BULK_REQUEST;
+  private readonly RATE_LIMIT_DELAY = ML_API_LIMITS.RATE_LIMIT_DELAY_MS;
   private lastRequestTime = 0;
 
   /**
@@ -62,7 +68,7 @@ export class MercadoLibreItemsService {
   /**
    * Make a request to ML API with error handling and retry logic
    */
-  private async makeRequest<T>(url: string, accessToken: string, retries = 3): Promise<T> {
+  private async makeRequest<T>(url: string, accessToken: string, retries = RETRY_CONFIG.MAX_RETRIES): Promise<T> {
     await this.rateLimit();
 
     for (let attempt = 0; attempt < retries; attempt++) {
@@ -77,20 +83,20 @@ export class MercadoLibreItemsService {
         if (response.status === 429 || response.status === 503) {
           // Rate limit exceeded or service unavailable - wait and retry
           const retryAfter = response.status === 429
-            ? parseInt(response.headers.get('Retry-After') || '60', 10)
-            : Math.min(5 * (attempt + 1), 30); // Exponential backoff for 503, max 30s
+            ? parseInt(response.headers.get('Retry-After') || String(RETRY_CONFIG.RETRY_AFTER_429_DEFAULT), 10)
+            : Math.min(RETRY_CONFIG.RETRY_AFTER_503_DEFAULT * (attempt + 1), RETRY_CONFIG.MAX_DELAY_MS / 1000);
           
-          console.log(`[ML Items Service] ${response.status === 429 ? 'Rate limit' : 'Service unavailable'} (${response.status}). Waiting ${retryAfter}s before retry (attempt ${attempt + 1}/${retries})...`);
+          logger.warn(`${response.status === 429 ? 'Rate limit' : 'Service unavailable'} (${response.status}). Waiting ${retryAfter}s before retry (attempt ${attempt + 1}/${retries})...`);
           await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
           continue;
         }
 
         if (!response.ok) {
-          const error = await response.json().catch(() => ({ message: 'Unknown error' }));
+          const error = await response.json().catch(() => ({ message: 'Unknown error' })) as { message?: string };
           throw new Error(`ML API Error: ${error.message || response.statusText} (${response.status})`);
         }
 
-        return await response.json();
+        return await response.json() as T;
       } catch (error) {
         if (attempt === retries - 1) throw error;
         
@@ -113,35 +119,40 @@ export class MercadoLibreItemsService {
     userId: string,
     accessToken: string,
     options: {
-      status?: 'active' | 'paused' | 'closed' | 'all';
+      status?: ItemStatus;
       offset?: number;
       limit?: number;
-      order?: 'start_time_desc' | 'start_time_asc' | 'price_desc' | 'price_asc';
+      order?: OrderOption;
     } = {}
   ): Promise<MLItemsSearchResponse> {
-    const { status = 'active', offset = 0, limit = 50, order = 'start_time_desc' } = options;
+    const { status = 'active', offset = 0, limit = ML_API_LIMITS.MAX_ITEMS_PER_PAGE, order = 'start_time_desc' } = options;
+
+    // Validate status
+    const validStatus = VALID_ITEM_STATUSES.includes(status as ItemStatus) ? status : 'active';
+    
+    // Validate order
+    const validOrder = VALID_ORDER_OPTIONS.includes(order as OrderOption) ? order : 'start_time_desc';
 
     // Validate and limit offset (ML has practical limits)
-    const maxOffset = 10000; // ML practical limit, beyond this can be slow/unreliable
-    const safeOffset = Math.min(Math.max(0, offset), maxOffset);
-    const safeLimit = Math.min(Math.max(1, limit), 50); // ML max is 50
+    const safeOffset = Math.min(Math.max(0, offset), ML_API_LIMITS.MAX_OFFSET);
+    const safeLimit = Math.min(Math.max(1, limit), ML_API_LIMITS.MAX_ITEMS_PER_PAGE);
 
     // Warn if offset is very large
     if (offset > 1000) {
-      console.warn(`Large offset requested: ${offset}. ML API may be slow or unreliable.`);
+      logger.warn(`Large offset requested: ${offset}. ML API may be slow or unreliable.`);
     }
 
     const params = new URLSearchParams({
-      status,
+      status: validStatus,
       offset: safeOffset.toString(),
       limit: safeLimit.toString(),
-      order,
+      order: validOrder,
       access_token: accessToken, // ML API requires access_token as query parameter
     });
 
     const url = `${this.BASE_URL}/users/${userId}/items/search?${params.toString()}`;
     
-    console.log(`[ML Items Service] Searching items: ${url.replace(accessToken, 'TOKEN_HIDDEN')}`);
+    logger.debug(`Searching items: ${url.replace(accessToken, 'TOKEN_HIDDEN')}`);
     
     try {
       // Use direct fetch for search endpoint (it uses access_token as query param, not Bearer token)
@@ -155,10 +166,10 @@ export class MercadoLibreItemsService {
       // Handle rate limiting (429) and service unavailable (503)
       if (response.status === 429 || response.status === 503) {
         const retryAfter = response.status === 429 
-          ? parseInt(response.headers.get('Retry-After') || '60', 10)
-          : 5; // For 503, wait 5 seconds before retry
+          ? parseInt(response.headers.get('Retry-After') || String(RETRY_CONFIG.RETRY_AFTER_429_DEFAULT), 10)
+          : RETRY_CONFIG.RETRY_AFTER_503_DEFAULT;
         
-        console.log(`[ML Items Service] ${response.status === 429 ? 'Rate limit' : 'Service unavailable'} (${response.status}). Waiting ${retryAfter}s before retry...`);
+        logger.warn(`${response.status === 429 ? 'Rate limit' : 'Service unavailable'} (${response.status}). Waiting ${retryAfter}s before retry...`);
         await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
         
         // Retry once
@@ -173,16 +184,16 @@ export class MercadoLibreItemsService {
           if (retryResponse.status === 503) {
             throw new Error(`ML API Error: Service Unavailable. Mercado Libre está temporalmente no disponible. Intenta de nuevo en unos momentos. (503)`);
           }
-          const error = await retryResponse.json().catch(() => ({ message: 'Unknown error' }));
+          const error = await retryResponse.json().catch(() => ({ message: 'Unknown error' })) as { message?: string };
           throw new Error(`ML API Error: ${error.message || retryResponse.statusText} (${retryResponse.status})`);
         }
-        const result = await retryResponse.json();
-        console.log(`[ML Items Service] Search result after retry: ${result.results?.length || 0} items found`);
+        const result = await retryResponse.json() as MLItemsSearchResponse;
+        logger.debug(`Search result after retry: ${result.results?.length || 0} items found`);
         return result;
       }
 
       if (!response.ok) {
-        const error = await response.json().catch(() => ({ message: 'Unknown error' }));
+        const error = await response.json().catch(() => ({ message: 'Unknown error' })) as { message?: string };
         const errorMessage = error.message || response.statusText || 'Unknown error';
         const errorStr = JSON.stringify(error).toLowerCase();
         
@@ -195,7 +206,7 @@ export class MercadoLibreItemsService {
                                 errorStr.includes('limit');
           
           if (isOffsetError) {
-            console.log(`[ML Items Service] Invalid offset/limit detected (offset=${safeOffset}, status=400). Error: ${errorMessage}. Pagination limit reached.`);
+            logger.debug(`Invalid offset/limit detected (offset=${safeOffset}, status=400). Error: ${errorMessage}. Pagination limit reached.`);
             return {
               seller_id: userId,
               results: [],
@@ -204,7 +215,7 @@ export class MercadoLibreItemsService {
                 offset: safeOffset,
                 limit: safeLimit,
               },
-              query: null,
+              query: undefined,
               orders: [],
               available_orders: [],
               paginationLimitReached: true, // Flag to indicate ML API pagination limit
@@ -215,8 +226,8 @@ export class MercadoLibreItemsService {
         throw new Error(`ML API Error: ${errorMessage} (${response.status})`);
       }
 
-      const result = await response.json();
-      console.log(`[ML Items Service] Search result: ${result.results?.length || 0} items found, total: ${result.paging?.total || 0}`);
+      const result = await response.json() as MLItemsSearchResponse;
+      logger.debug(`Search result: ${result.results?.length || 0} items found, total: ${result.paging?.total || 0}`);
       
       // Validate response
       if (!result.paging) {
@@ -228,15 +239,14 @@ export class MercadoLibreItemsService {
 
       return result;
     } catch (error) {
-      console.error(`[ML Items Service] Error searching items:`, error);
-      console.error(`[ML Items Service] Error details:`, error instanceof Error ? error.message : String(error));
+      logger.error(`Error searching items:`, error);
       
       // If it's an invalid offset/limit error, return empty results
       if (error instanceof Error && 
           (error.message.includes('Invalid limit and offset') || 
            error.message.includes('Invalid offset') ||
            (error.message.includes('400') && error.message.includes('offset')))) {
-        console.log(`[ML Items Service] Invalid offset/limit detected, returning empty results`);
+        logger.debug(`Invalid offset/limit detected, returning empty results`);
         return {
           seller_id: userId,
           results: [],
@@ -245,7 +255,7 @@ export class MercadoLibreItemsService {
             offset: safeOffset,
             limit: safeLimit,
           },
-          query: null,
+          query: undefined,
           orders: [],
           available_orders: [],
         };
@@ -272,17 +282,17 @@ export class MercadoLibreItemsService {
       });
 
       if (response.status === 429) {
-        const retryAfter = parseInt(response.headers.get('Retry-After') || '60', 10);
+        const retryAfter = parseInt(response.headers.get('Retry-After') || String(RETRY_CONFIG.RETRY_AFTER_429_DEFAULT), 10);
         await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
         return await this.getItem(itemId, accessToken); // Retry
       }
 
       if (!response.ok) {
-        const error = await response.json().catch(() => ({ message: 'Unknown error' }));
+        const error = await response.json().catch(() => ({ message: 'Unknown error' })) as { message?: string };
         throw new Error(`ML API Error: ${error.message || response.statusText} (${response.status})`);
       }
 
-      return await response.json();
+      return await response.json() as any;
     } catch (error) {
       if (error instanceof Error) {
         throw error;
@@ -396,7 +406,7 @@ export class MercadoLibreItemsService {
         total: active + paused + closed,
       };
     } catch (error) {
-      console.error('Error getting items count:', error);
+      logger.error('Error getting items count:', error);
       // Return zeros instead of throwing to allow UI to show something
       return {
         active: 0,

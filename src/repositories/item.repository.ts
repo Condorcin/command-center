@@ -1,4 +1,5 @@
 import { Item } from '../db/schema';
+import { logger } from '../utils/logger';
 
 export class ItemRepository {
   constructor(private db: D1Database) {}
@@ -366,9 +367,9 @@ export class ItemRepository {
 
     try {
       await this.db.batch(batch);
-      console.log(`Successfully saved ${items.length} items to database`);
+      logger.debug(`Successfully saved ${items.length} items to database`);
     } catch (error) {
-      console.error(`Error in bulkUpsert for ${items.length} items:`, error);
+      logger.error(`Error in bulkUpsert for ${items.length} items:`, error);
       // Re-throw to let caller handle it
       throw error;
     }

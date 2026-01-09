@@ -9,6 +9,7 @@ import { getCookie } from './utils/cookies';
 import { AuthService } from './services/auth.service';
 import { UserRepository } from './repositories/user.repository';
 import { SessionRepository } from './repositories/session.repository';
+import { logger } from './utils/logger';
 
 export interface Env {
   DB: D1Database;
@@ -106,7 +107,7 @@ export default {
 
       return response;
     } catch (error) {
-      console.error('Unhandled error:', error);
+      logger.error('Unhandled error:', error);
       return errorResponse('Internal server error', 500, 'INTERNAL_ERROR');
     }
   },
@@ -119,7 +120,7 @@ async function homeHandler(request: Request, env: Env): Promise<Response> {
   try {
     // Si no hay DB disponible, redirigir a login
     if (!env.DB) {
-      return Response.redirect(new URL('/auth/login', request.url), 302);
+      return Response.redirect(new URL('/auth/login', request.url).toString(), 302);
     }
 
     const sessionId = getCookie(request, 'session_id');
@@ -132,19 +133,19 @@ async function homeHandler(request: Request, env: Env): Promise<Response> {
         
         const user = await authService.getUserFromSession(sessionId);
         if (user) {
-          return Response.redirect(new URL('/dashboard', request.url), 302);
+          return Response.redirect(new URL('/dashboard', request.url).toString(), 302);
         }
       } catch (dbError) {
         // Si hay error con la DB, simplemente redirigir a login
-        console.error('Database error in homeHandler:', dbError);
+        logger.error('Database error in homeHandler:', dbError);
       }
     }
 
-    return Response.redirect(new URL('/auth/login', request.url), 302);
+    return Response.redirect(new URL('/auth/login', request.url).toString(), 302);
   } catch (error) {
     // Si hay error, simplemente redirigir a login
-    console.error('Error in homeHandler:', error);
-    return Response.redirect(new URL('/auth/login', request.url), 302);
+    logger.error('Error in homeHandler:', error);
+    return Response.redirect(new URL('/auth/login', request.url).toString(), 302);
   }
 }
 
