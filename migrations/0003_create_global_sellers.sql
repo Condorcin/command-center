@@ -14,3 +14,6 @@ CREATE TABLE IF NOT EXISTS global_sellers (
 CREATE INDEX IF NOT EXISTS idx_global_sellers_user_id ON global_sellers(user_id);
 CREATE INDEX IF NOT EXISTS idx_global_sellers_ml_user_id ON global_sellers(ml_user_id);
 
+
+
+

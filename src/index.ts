@@ -1,7 +1,9 @@
 import { signupHandler, loginHandler, logoutHandler, meHandler, changePasswordHandler } from './routes/auth';
 import { dashboardHandler } from './routes/dashboard';
 import { saveCredentialsHandler, clearCredentialsHandler, getCredentialsStatusHandler } from './routes/mercado-libre';
-import { getGlobalSellersHandler, createGlobalSellerHandler, updateGlobalSellerHandler, deleteGlobalSellerHandler } from './routes/global-seller';
+import { globalSellerDetailsHandler } from './routes/global-seller-details';
+import { getGlobalSellersHandler, getGlobalSellerByIdHandler, createGlobalSellerHandler, updateGlobalSellerHandler, deleteGlobalSellerHandler } from './routes/global-seller';
+import { getItemsCountHandler, getItemsHandler, syncItemsHandler, getSyncStatusHandler, loadItemsHandler, getSavedItemsHandler, checkItemsHandler } from './routes/global-seller-items';
 import { errorResponse } from './utils/response';
 import { getCookie } from './utils/cookies';
 import { AuthService } from './services/auth.service';
@@ -63,6 +65,22 @@ export default {
         response = await clearCredentialsHandler(request, env);
       } else if (path === '/api/global-sellers' && method === 'GET') {
         response = await getGlobalSellersHandler(request, env);
+      } else if (path.match(/^\/api\/global-sellers\/[^/]+\/items\/count$/) && method === 'GET') {
+        response = await getItemsCountHandler(request, env);
+      } else if (path.match(/^\/api\/global-sellers\/[^/]+\/items\/sync-status$/) && method === 'GET') {
+        response = await getSyncStatusHandler(request, env);
+      } else if (path.match(/^\/api\/global-sellers\/[^/]+\/items\/saved$/) && method === 'GET') {
+        response = await getSavedItemsHandler(request, env);
+      } else if (path.match(/^\/api\/global-sellers\/[^/]+\/items\/sync$/) && method === 'POST') {
+        response = await syncItemsHandler(request, env);
+      } else if (path.match(/^\/api\/global-sellers\/[^/]+\/items\/check$/) && method === 'POST') {
+        response = await checkItemsHandler(request, env);
+      } else if (path.match(/^\/api\/global-sellers\/[^/]+\/items\/load$/) && method === 'POST') {
+        response = await loadItemsHandler(request, env);
+      } else if (path.match(/^\/api\/global-sellers\/[^/]+\/items$/) && method === 'GET') {
+        response = await getItemsHandler(request, env);
+      } else if (path.startsWith('/api/global-sellers/') && method === 'GET') {
+        response = await getGlobalSellerByIdHandler(request, env);
       } else if (path === '/api/global-sellers' && method === 'POST') {
         response = await createGlobalSellerHandler(request, env);
       } else if (path.startsWith('/api/global-sellers/') && method === 'PUT') {
@@ -71,6 +89,8 @@ export default {
         response = await deleteGlobalSellerHandler(request, env);
       } else if (path === '/dashboard' && method === 'GET') {
         response = await dashboardHandler(request, env);
+      } else if (path.startsWith('/dashboard/global-seller/') && method === 'GET') {
+        response = await globalSellerDetailsHandler(request, env);
       } else if (path === '/favicon.svg' && method === 'GET') {
         response = faviconHandler();
       } else {

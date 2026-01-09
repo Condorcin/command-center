@@ -67,3 +67,6 @@ export function handleError(error: unknown): Response {
   return errorResponse('An unexpected error occurred', 500, 'UNKNOWN_ERROR');
 }
 
+
+
+

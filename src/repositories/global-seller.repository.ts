@@ -52,15 +52,57 @@ export class GlobalSellerRepository {
     userId: string,
     mlUserId: string,
     mlAccessToken: string,
-    name?: string
+    name?: string,
+    mlInfo?: {
+      nickname?: string | null;
+      email?: string | null;
+      first_name?: string | null;
+      last_name?: string | null;
+      country_id?: string | null;
+      site_id?: string | null;
+      registration_date?: string | null;
+      phone?: string | null;
+      address?: string | null;
+      city?: string | null;
+      state?: string | null;
+      zip_code?: string | null;
+      tax_id?: string | null;
+      corporate_name?: string | null;
+      brand_name?: string | null;
+      seller_experience?: string | null;
+    }
   ): Promise<GlobalSeller> {
     const now = Math.floor(Date.now() / 1000);
 
     await this.db
       .prepare(
-        'INSERT INTO global_sellers (id, user_id, ml_user_id, ml_access_token, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        `INSERT INTO global_sellers (
+          id, user_id, ml_user_id, ml_access_token, name, created_at, updated_at,
+          ml_nickname, ml_email, ml_first_name, ml_last_name, ml_country_id, ml_site_id,
+          ml_registration_date, ml_phone, ml_address, ml_city, ml_state, ml_zip_code,
+          ml_tax_id, ml_corporate_name, ml_brand_name, ml_seller_experience, ml_info_updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .bind(id, userId, mlUserId, mlAccessToken, name || null, now, now)
+      .bind(
+        id, userId, mlUserId, mlAccessToken, name || null, now, now,
+        mlInfo?.nickname || null,
+        mlInfo?.email || null,
+        mlInfo?.first_name || null,
+        mlInfo?.last_name || null,
+        mlInfo?.country_id || null,
+        mlInfo?.site_id || null,
+        mlInfo?.registration_date || null,
+        mlInfo?.phone || null,
+        mlInfo?.address || null,
+        mlInfo?.city || null,
+        mlInfo?.state || null,
+        mlInfo?.zip_code || null,
+        mlInfo?.tax_id || null,
+        mlInfo?.corporate_name || null,
+        mlInfo?.brand_name || null,
+        mlInfo?.seller_experience || null,
+        mlInfo ? now : null
+      )
       .run();
 
     const globalSeller = await this.findById(id);
@@ -78,15 +120,60 @@ export class GlobalSellerRepository {
     id: string,
     mlUserId: string,
     mlAccessToken: string,
-    name?: string
+    name?: string,
+    mlInfo?: {
+      nickname?: string | null;
+      email?: string | null;
+      first_name?: string | null;
+      last_name?: string | null;
+      country_id?: string | null;
+      site_id?: string | null;
+      registration_date?: string | null;
+      phone?: string | null;
+      address?: string | null;
+      city?: string | null;
+      state?: string | null;
+      zip_code?: string | null;
+      tax_id?: string | null;
+      corporate_name?: string | null;
+      brand_name?: string | null;
+      seller_experience?: string | null;
+    }
   ): Promise<GlobalSeller> {
     const now = Math.floor(Date.now() / 1000);
 
     await this.db
       .prepare(
-        'UPDATE global_sellers SET ml_user_id = ?, ml_access_token = ?, name = ?, updated_at = ? WHERE id = ?'
+        `UPDATE global_sellers SET 
+          ml_user_id = ?, ml_access_token = ?, name = ?, updated_at = ?,
+          ml_nickname = ?, ml_email = ?, ml_first_name = ?, ml_last_name = ?,
+          ml_country_id = ?, ml_site_id = ?, ml_registration_date = ?,
+          ml_phone = ?, ml_address = ?, ml_city = ?, ml_state = ?, ml_zip_code = ?,
+          ml_tax_id = ?, ml_corporate_name = ?, ml_brand_name = ?,
+          ml_seller_experience = ?, ml_info_updated_at = ?
+        WHERE id = ?`
       )
-      .bind(mlUserId, mlAccessToken, name || null, now, id)
+      .bind(
+        mlUserId, mlAccessToken, name || null, now,
+        mlInfo?.nickname || null,
+        mlInfo?.email || null,
+        mlInfo?.first_name || null,
+        mlInfo?.last_name || null,
+        mlInfo?.country_id || null,
+        mlInfo?.site_id || null,
+        mlInfo?.registration_date || null,
+        mlInfo?.phone || null,
+        mlInfo?.address || null,
+        mlInfo?.city || null,
+        mlInfo?.state || null,
+        mlInfo?.zip_code || null,
+        mlInfo?.tax_id || null,
+        mlInfo?.corporate_name || null,
+        mlInfo?.brand_name || null,
+        mlInfo?.seller_experience || null,
+        mlInfo ? now : null,
+        id
+      )
       .run();
 
     const globalSeller = await this.findById(id);
@@ -119,4 +206,7 @@ export class GlobalSellerRepository {
     return result !== null;
   }
 }
+
+
+
 

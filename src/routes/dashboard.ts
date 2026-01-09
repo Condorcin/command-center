@@ -715,13 +715,6 @@ export async function dashboardHandler(request: Request, env: Env): Promise<Resp
           <form id="globalSellerForm">
             <input type="hidden" id="globalSellerId" value="">
             <div class="form-group">
-              <label class="form-label">Nombre (Opcional)</label>
-              <input type="text" class="form-input" id="globalSellerName" name="name" placeholder="Ej: Tienda Principal">
-              <small style="color: var(--text-secondary); font-size: 12px; margin-top: 4px; display: block;">
-                Un nombre descriptivo para identificar este Global Seller
-              </small>
-            </div>
-            <div class="form-group">
               <label class="form-label">User ID</label>
               <input type="text" class="form-input" id="globalSellerMLUserId" name="mlUserId" required placeholder="Ej: 123456789">
               <small style="color: var(--text-secondary); font-size: 12px; margin-top: 4px; display: block;">
@@ -945,11 +938,14 @@ export async function dashboardHandler(request: Request, env: Env): Promise<Resp
       editingGlobalSellerId = globalSeller ? globalSeller.id : null;
       modalTitle.textContent = globalSeller ? 'Editar Global Seller' : 'Agregar Global Seller';
       document.getElementById('globalSellerId').value = globalSeller ? globalSeller.id : '';
-      document.getElementById('globalSellerName').value = globalSeller ? (globalSeller.name || '') : '';
       document.getElementById('globalSellerMLUserId').value = globalSeller ? globalSeller.ml_user_id : '';
       document.getElementById('globalSellerMLAccessToken').value = '';
       modalAlert.classList.remove('show');
       modal.classList.add('show');
+    }
+    
+    async function viewGlobalSeller(id) {
+      window.location.href = \`/dashboard/global-seller/\${id}\`;
     }
     
     function closeModal() {
@@ -991,6 +987,7 @@ export async function dashboardHandler(request: Request, env: Env): Promise<Resp
           <td>
             <div class="table-actions">
               <button class="btn btn-secondary btn-icon" onclick="editGlobalSeller('\${gs.id}')">Editar</button>
+              <button class="btn btn-primary btn-icon" onclick="viewGlobalSeller('\${gs.id}')">Explorar</button>
               <button class="btn btn-danger btn-icon" onclick="deleteGlobalSeller('\${gs.id}')">Eliminar</button>
             </div>
           </td>
@@ -1041,6 +1038,7 @@ export async function dashboardHandler(request: Request, env: Env): Promise<Resp
     }
     
     // Make functions global for onclick handlers
+    window.viewGlobalSeller = viewGlobalSeller;
     window.editGlobalSeller = editGlobalSeller;
     window.deleteGlobalSeller = deleteGlobalSeller;
     
@@ -1061,7 +1059,6 @@ export async function dashboardHandler(request: Request, env: Env): Promise<Resp
     globalSellerForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('submitGlobalSellerBtn');
-      const name = document.getElementById('globalSellerName').value.trim();
       const mlUserId = document.getElementById('globalSellerMLUserId').value.trim();
       const mlAccessToken = document.getElementById('globalSellerMLAccessToken').value.trim();
       
@@ -1084,7 +1081,6 @@ export async function dashboardHandler(request: Request, env: Env): Promise<Resp
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
           body: JSON.stringify({
-            name: name || undefined,
             mlUserId,
             mlAccessToken
           })

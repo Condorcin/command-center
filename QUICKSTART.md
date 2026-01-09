@@ -119,3 +119,6 @@ curl http://localhost:8787/auth/me \
 3. Implementar logging estructurado
 4. Agregar tests
 
+
+
+
