@@ -5,8 +5,11 @@ import { MercadoLibreAPIService } from '../services/mercado-libre-api.service';
 import { UserRepository } from '../repositories/user.repository';
 import { SessionRepository } from '../repositories/session.repository';
 import { AuthService } from '../services/auth.service';
+import { ItemRepository } from '../repositories/item.repository';
+import { MarketplaceItemRepository } from '../repositories/marketplace-item.repository';
 import { validateMercadoLibreCredentials } from '../utils/validation';
 import { successResponse, errorResponse, handleError } from '../utils/response';
+import { logger } from '../utils/logger';
 
 export interface Env {
   DB: D1Database;
@@ -159,6 +162,70 @@ export async function updateGlobalSellerHandler(request: Request, env: Env): Pro
 
     return successResponse({ globalSeller: safeGlobalSeller });
   } catch (error) {
+    if (error instanceof Error && error.message === 'Unauthorized') {
+      return errorResponse('Unauthorized', 401, 'UNAUTHORIZED');
+    }
+    return handleError(error);
+  }
+}
+
+/**
+ * POST /api/global-sellers/:id/clear
+ * Clear all data for a global seller (items, marketplace items, and ML data)
+ * This resets the global seller to a clean state like a new operator
+ */
+export async function clearGlobalSellerHandler(request: Request, env: Env): Promise<Response> {
+  try {
+    const userRepo = new UserRepository(env.DB);
+    const sessionRepo = new SessionRepository(env.DB);
+    const authService = new AuthService(userRepo, sessionRepo);
+    const globalSellerRepo = new GlobalSellerRepository(env.DB);
+    const itemRepo = new ItemRepository(env.DB);
+    const marketplaceItemRepo = new MarketplaceItemRepository(env.DB);
+    const globalSellerService = new GlobalSellerService(globalSellerRepo, new MercadoLibreAPIService());
+
+    const user = await requireAuth(request, env, authService);
+
+    const url = new URL(request.url);
+    const pathParts = url.pathname.split('/');
+    const globalSellerId = pathParts[3]; // /api/global-sellers/:id/clear
+
+    if (!globalSellerId) {
+      return errorResponse('Global Seller ID is required', 400, 'MISSING_ID');
+    }
+
+    const globalSeller = await globalSellerService.getById(globalSellerId);
+
+    if (!globalSeller) {
+      return errorResponse('Global Seller not found', 404, 'NOT_FOUND');
+    }
+
+    if (globalSeller.user_id !== user.id) {
+      return errorResponse('Access denied', 403, 'FORBIDDEN');
+    }
+
+    logger.info(`[CLEAR] Starting data cleanup for Global Seller ${globalSellerId}`);
+
+    // 1. Delete all marketplace items
+    logger.info(`[CLEAR] Deleting marketplace items...`);
+    await marketplaceItemRepo.deleteByGlobalSellerId(globalSellerId);
+
+    // 2. Delete all items
+    logger.info(`[CLEAR] Deleting items...`);
+    await itemRepo.deleteByGlobalSellerId(globalSellerId);
+
+    // 3. Clear all ML data from global seller
+    logger.info(`[CLEAR] Clearing ML data from global seller...`);
+    await globalSellerRepo.clearMLData(globalSellerId);
+
+    logger.info(`[CLEAR] Data cleanup complete for Global Seller ${globalSellerId}`);
+
+    return successResponse({
+      message: 'Global seller data cleared successfully. The seller is now in a clean state.',
+      globalSellerId,
+    });
+  } catch (error) {
+    logger.error('[CLEAR] Error:', error);
     if (error instanceof Error && error.message === 'Unauthorized') {
       return errorResponse('Unauthorized', 401, 'UNAUTHORIZED');
     }

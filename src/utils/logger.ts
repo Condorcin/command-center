@@ -17,10 +17,28 @@ class LoggerImpl implements Logger {
   private isDevelopment: boolean;
 
   constructor() {
-    // In Cloudflare Workers, we don't have process.env
-    // Logs are controlled by log level - debug/info only in development
-    // For production, set this to false to disable debug/info logs
-    this.isDevelopment = false; // Set to true for development debugging
+    // Default to production mode (false) for security and performance
+    // In production, only errors and warnings are logged
+    // To enable debug/info logs, call logger.setDevelopmentMode(true) or set ENVIRONMENT=development
+    this.isDevelopment = false;
+  }
+
+  /**
+   * Set development mode
+   * Call this method to enable debug/info logs in development
+   * @param enabled - true to enable development mode, false for production
+   */
+  setDevelopmentMode(enabled: boolean): void {
+    this.isDevelopment = enabled;
+  }
+
+  /**
+   * Initialize logger with environment configuration
+   * @param env - Environment object from Cloudflare Workers (can contain ENVIRONMENT variable)
+   */
+  initialize(env?: { ENVIRONMENT?: string; NODE_ENV?: string }): void {
+    const envValue = env?.ENVIRONMENT || env?.NODE_ENV;
+    this.isDevelopment = envValue === 'development' || envValue === 'dev';
   }
 
   private shouldLog(level: LogLevel): boolean {

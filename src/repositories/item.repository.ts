@@ -235,6 +235,7 @@ export class ItemRepository {
 
   /**
    * Get count by status for a global seller
+   * Optimized: Uses index on status for faster GROUP BY
    */
   async getCountByStatus(globalSellerId: string): Promise<{
     active: number;
@@ -242,6 +243,7 @@ export class ItemRepository {
     closed: number;
     total: number;
   }> {
+    // Use index on status for faster GROUP BY
     const result = await this.db
       .prepare(`
         SELECT 
@@ -271,6 +273,186 @@ export class ItemRepository {
     }
 
     return counts;
+  }
+
+  /**
+   * Get count of CBTs (items with ml_item_id starting with 'CBT') for a global seller
+   * Optimized: Uses index on ml_item_id for faster counting
+   */
+  async getCBTsCount(globalSellerId: string): Promise<number> {
+    // Use index on ml_item_id for faster LIKE 'CBT%' queries
+    // The index idx_items_ml_item_id should make this faster
+    const result = await this.db
+      .prepare(`
+        SELECT COUNT(*) as count
+        FROM items
+        WHERE global_seller_id = ?
+        AND ml_item_id LIKE 'CBT%'
+      `)
+      .bind(globalSellerId)
+      .first<{ count: number }>();
+
+    return result?.count || 0;
+  }
+
+  /**
+   * Get count of synced CBTs (items with sync_log = 'OK' in metadata OR with title/price)
+   */
+  async getSyncedCBTsCount(globalSellerId: string): Promise<number> {
+    // Optimized: Count items that have title OR price (much faster with indexes)
+    // This is more efficient than checking metadata with LIKE
+    // Items with title/price are considered synced
+    const result = await this.db
+      .prepare(`
+        SELECT COUNT(*) as count
+        FROM items
+        WHERE global_seller_id = ?
+        AND ml_item_id LIKE 'CBT%'
+        AND (title IS NOT NULL OR (price IS NOT NULL AND price != 0))
+      `)
+      .bind(globalSellerId)
+      .first<{ count: number }>();
+
+    return result?.count || 0;
+  }
+
+  /**
+   * Get unsynced CBTs (items without sync_log = 'OK' and without title/price)
+   */
+  async findUnsyncedCBTs(
+    globalSellerId: string,
+    options: {
+      limit?: number;
+      offset?: number;
+    } = {}
+  ): Promise<{ items: Item[]; total: number }> {
+    const {
+      limit = 100000,
+      offset = 0,
+    } = options;
+
+    // Optimized: Count unsynced CBTs (no title and no price)
+    // This is much faster than checking metadata with LIKE
+    const countResult = await this.db
+      .prepare(`
+        SELECT COUNT(*) as count
+        FROM items
+        WHERE global_seller_id = ?
+        AND ml_item_id LIKE 'CBT%'
+        AND title IS NULL
+        AND (price IS NULL OR price = 0)
+      `)
+      .bind(globalSellerId)
+      .first<{ count: number }>();
+
+    const total = countResult?.count || 0;
+
+    // Get unsynced CBTs
+    const itemsResult = await this.db
+      .prepare(`
+        SELECT *
+        FROM items
+        WHERE global_seller_id = ?
+        AND ml_item_id LIKE 'CBT%'
+        AND title IS NULL
+        AND (price IS NULL OR price = 0)
+        ORDER BY synced_at ASC
+        LIMIT ? OFFSET ?
+      `)
+      .bind(globalSellerId, limit, offset)
+      .all<Item>();
+
+    const items = (itemsResult.results || []) as Item[];
+
+    return { items, total };
+  }
+
+  /**
+   * Get CBTs (items with ml_item_id starting with "CBT") with pagination
+   */
+  async findCBTsByGlobalSellerId(
+    globalSellerId: string,
+    options: {
+      limit?: number;
+      offset?: number;
+      orderBy?: 'title' | 'price' | 'updated_at' | 'start_time' | 'synced_at';
+      orderDir?: 'ASC' | 'DESC';
+    } = {}
+  ): Promise<{ items: Item[]; total: number }> {
+    const {
+      limit = 50,
+      offset = 0,
+      orderBy,
+      orderDir,
+    } = options;
+
+    // Optimize: Get count using index on ml_item_id
+    // For very large datasets, we can skip count if not needed
+    // But for pagination we need it, so we'll optimize the query
+    const countResult = await this.db
+      .prepare(`
+        SELECT COUNT(*) as count
+        FROM items
+        WHERE global_seller_id = ?
+        AND ml_item_id LIKE 'CBT%'
+      `)
+      .bind(globalSellerId)
+      .first<{ count: number }>();
+
+    const total = countResult?.count || 0;
+
+    // Optimize: Skip ORDER BY for better performance on large datasets (396k+ records)
+    // ORDER BY is very slow on large tables, especially with synced_at
+    let itemsResult;
+    if (orderBy && orderDir) {
+      // Validate orderBy to prevent SQL injection
+      const validOrderBy = ['title', 'price', 'updated_at', 'start_time', 'synced_at'].includes(orderBy)
+        ? orderBy
+        : null;
+      const validOrderDir = orderDir === 'ASC' ? 'ASC' : 'DESC';
+      
+      if (validOrderBy) {
+        itemsResult = await this.db
+          .prepare(`
+            SELECT *
+            FROM items
+            WHERE global_seller_id = ?
+            AND ml_item_id LIKE 'CBT%'
+            ORDER BY ${validOrderBy} ${validOrderDir}
+            LIMIT ? OFFSET ?
+          `)
+          .bind(globalSellerId, limit, offset)
+          .all<Item>();
+      } else {
+        // Invalid orderBy, skip ordering
+        itemsResult = await this.db
+          .prepare(`
+            SELECT *
+            FROM items
+            WHERE global_seller_id = ?
+            AND ml_item_id LIKE 'CBT%'
+            LIMIT ? OFFSET ?
+          `)
+          .bind(globalSellerId, limit, offset)
+          .all<Item>();
+      }
+    } else {
+      // No ORDER BY - much faster for large datasets
+      itemsResult = await this.db
+        .prepare(`
+          SELECT *
+          FROM items
+          WHERE global_seller_id = ?
+          AND ml_item_id LIKE 'CBT%'
+          LIMIT ? OFFSET ?
+        `)
+        .bind(globalSellerId, limit, offset)
+        .all<Item>();
+    }
+
+    const items = (itemsResult.results || []) as Item[];
+
+    return { items, total };
   }
 
   /**
@@ -367,9 +549,15 @@ export class ItemRepository {
 
     try {
       await this.db.batch(batch);
-      logger.debug(`Successfully saved ${items.length} items to database`);
+// logger.debug(`Successfully saved ${items.length} items to database`);
+      console.log(`[BULK UPSERT] ✅ Saved ${items.length} items (may update existing if duplicates)`);
+      
+      // Count unique ml_item_ids to verify
+      const uniqueIds = new Set(items.map(item => item.ml_item_id));
+      console.log(`[BULK UPSERT] 📊 Unique ml_item_ids in batch: ${uniqueIds.size} (total items: ${items.length})`);
     } catch (error) {
       logger.error(`Error in bulkUpsert for ${items.length} items:`, error);
+      console.error(`[BULK UPSERT] ❌ Error saving ${items.length} items:`, error);
       // Re-throw to let caller handle it
       throw error;
     }

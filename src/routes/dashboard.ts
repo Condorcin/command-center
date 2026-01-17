@@ -338,6 +338,24 @@ export async function dashboardHandler(request: Request, env: Env): Promise<Resp
       background: var(--border-color);
     }
     
+    .btn-warning {
+      background: #f59e0b;
+      color: white;
+      border: none;
+    }
+    
+    .btn-warning:hover {
+      background: #d97706;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4);
+    }
+    
+    .btn-warning:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+    
     .toggle-switch {
       position: relative;
       display: inline-block;
@@ -689,7 +707,7 @@ export async function dashboardHandler(request: Request, env: Env): Promise<Resp
                   <th>Nombre</th>
                   <th>ML User ID</th>
                   <th>Creado</th>
-                  <th>Acciones</th>
+                  <th style="width: 300px;">Acciones</th>
                 </tr>
               </thead>
               <tbody id="globalSellersTableBody">
@@ -982,12 +1000,13 @@ export async function dashboardHandler(request: Request, env: Env): Promise<Resp
       globalSellersTableBody.innerHTML = globalSellers.map(gs => \`
         <tr>
           <td>\${gs.name || '-'}</td>
-          <td>\${gs.ml_user_id}</td>
+          <td>\${gs.ml_user_id || '-'}</td>
           <td>\${formatDate(gs.created_at)}</td>
           <td>
             <div class="table-actions">
               <button class="btn btn-secondary btn-icon" onclick="editGlobalSeller('\${gs.id}')">Editar</button>
               <button class="btn btn-primary btn-icon" onclick="viewGlobalSeller('\${gs.id}')">Explorar</button>
+              <button class="btn btn-warning btn-icon" onclick="clearGlobalSeller('\${gs.id}')" title="Limpiar todos los datos (items, marketplace items y datos de ML)">Limpiar</button>
               <button class="btn btn-danger btn-icon" onclick="deleteGlobalSeller('\${gs.id}')">Eliminar</button>
             </div>
           </td>
@@ -1010,6 +1029,30 @@ export async function dashboardHandler(request: Request, env: Env): Promise<Resp
         }
       } catch (error) {
         showMLAlert('Error al cargar el Global Seller', 'error');
+      }
+    }
+    
+    async function clearGlobalSeller(id) {
+      if (!confirm('¿Estás seguro de que deseas limpiar todos los datos de este Global Seller?\\n\\nEsto eliminará:\\n- Todos los items\\n- Todos los marketplace items\\n- Todos los datos de Mercado Libre\\n\\nEl Global Seller quedará en un estado limpio como un operador nuevo.')) {
+        return;
+      }
+      
+      try {
+        const response = await fetch(\`/api/global-sellers/\${id}/clear\`, {
+          method: 'POST',
+          credentials: 'include'
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+          showMLAlert('Datos del Global Seller limpiados exitosamente. Ahora puedes ingresar nuevos datos de Mercado Libre.', 'success');
+          await loadGlobalSellers();
+        } else {
+          showMLAlert(data.error?.message || 'Error al limpiar los datos del Global Seller', 'error');
+        }
+      } catch (error) {
+        showMLAlert('Error de conexión', 'error');
       }
     }
     
@@ -1040,6 +1083,7 @@ export async function dashboardHandler(request: Request, env: Env): Promise<Resp
     // Make functions global for onclick handlers
     window.viewGlobalSeller = viewGlobalSeller;
     window.editGlobalSeller = editGlobalSeller;
+    window.clearGlobalSeller = clearGlobalSeller;
     window.deleteGlobalSeller = deleteGlobalSeller;
     
     // Load global sellers on page load

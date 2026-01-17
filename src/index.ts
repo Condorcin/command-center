@@ -2,8 +2,8 @@ import { signupHandler, loginHandler, logoutHandler, meHandler, changePasswordHa
 import { dashboardHandler } from './routes/dashboard';
 import { saveCredentialsHandler, clearCredentialsHandler, getCredentialsStatusHandler } from './routes/mercado-libre';
 import { globalSellerDetailsHandler } from './routes/global-seller-details';
-import { getGlobalSellersHandler, getGlobalSellerByIdHandler, createGlobalSellerHandler, updateGlobalSellerHandler, deleteGlobalSellerHandler } from './routes/global-seller';
-import { getItemsCountHandler, getItemsHandler, syncItemsHandler, getSyncStatusHandler, loadItemsHandler, getSavedItemsHandler, checkItemsHandler } from './routes/global-seller-items';
+import { getGlobalSellersHandler, getGlobalSellerByIdHandler, createGlobalSellerHandler, updateGlobalSellerHandler, deleteGlobalSellerHandler, clearGlobalSellerHandler } from './routes/global-seller';
+import { getItemsCountHandler, getItemsHandler, syncItemsHandler, getSyncStatusHandler, loadItemsHandler, getSavedItemsHandler, checkItemsHandler, getMarketplaceItemsHandler, getAllMarketplaceItemsHandler, getItemPerformanceHandler, syncAllPerformanceHandler, syncCbtMarketplaceItemsHandler, getCBTsHandler, syncCBTsHandler, debugCBTsHandler, getSavedCBTsHandler, saveCBTsHandler, fetchCBTsHandler, getCBTsCountHandler, syncIndividualCBTHandler, syncAllCBTsHandler, pauseSyncAllCBTsHandler, resumeSyncAllCBTsHandler, stopSyncAllCBTsHandler, continueSyncCBTsHandler } from './routes/global-seller-items';
 import { errorResponse } from './utils/response';
 import { getCookie } from './utils/cookies';
 import { AuthService } from './services/auth.service';
@@ -13,13 +13,19 @@ import { logger } from './utils/logger';
 
 export interface Env {
   DB: D1Database;
+  ENVIRONMENT?: string;
+  NODE_ENV?: string;
 }
 
 /**
  * Main request handler
  */
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
+    // Initialize logger with environment configuration
+    // This allows the logger to check ENVIRONMENT variable from wrangler.toml
+    logger.initialize(env);
+
     const url = new URL(request.url);
     const path = url.pathname;
     const method = request.method;
@@ -74,18 +80,68 @@ export default {
         response = await getSavedItemsHandler(request, env);
       } else if (path.match(/^\/api\/global-sellers\/[^/]+\/items\/sync$/) && method === 'POST') {
         response = await syncItemsHandler(request, env);
+      } else if (path.match(/^\/api\/global-sellers\/[^/]+\/items\/sync-cbt-marketplace-items$/) && method === 'POST') {
+        response = await syncCbtMarketplaceItemsHandler(request, env);
       } else if (path.match(/^\/api\/global-sellers\/[^/]+\/items\/check$/) && method === 'POST') {
         response = await checkItemsHandler(request, env);
       } else if (path.match(/^\/api\/global-sellers\/[^/]+\/items\/load$/) && method === 'POST') {
         response = await loadItemsHandler(request, env);
+      } else if (path.match(/^\/api\/global-sellers\/[^/]+\/marketplace-items$/) && method === 'GET') {
+        response = await getAllMarketplaceItemsHandler(request, env);
+      } else if (path.match(/^\/api\/global-sellers\/[^/]+\/items\/[^/]+\/marketplace-items$/) && method === 'GET') {
+        response = await getMarketplaceItemsHandler(request, env);
+      } else if (path.match(/^\/api\/global-sellers\/[^/]+\/items\/[^/]+\/performance$/) && method === 'GET') {
+        response = await getItemPerformanceHandler(request, env);
+      } else if (path.match(/^\/api\/global-sellers\/[^/]+\/performance\/sync$/) && method === 'POST') {
+        response = await syncAllPerformanceHandler(request, env);
       } else if (path.match(/^\/api\/global-sellers\/[^/]+\/items$/) && method === 'GET') {
         response = await getItemsHandler(request, env);
+      } else if (path.match(/^\/api\/global-sellers\/[^/]+\/cbts\/debug$/) && method === 'GET') {
+        response = await debugCBTsHandler(request, env);
+      } else if (path.match(/^\/api\/global-sellers\/[^/]+\/cbts\/sync$/) && method === 'POST') {
+        response = await syncCBTsHandler(request, env);
+        // Use waitUntil to ensure background process continues
+        if (ctx && (response as any).backgroundPromise) {
+          ctx.waitUntil((response as any).backgroundPromise);
+        }
+      } else if (path.match(/^\/api\/global-sellers\/[^/]+\/cbts$/) && method === 'GET') {
+        response = await getCBTsHandler(request, env);
+      } else if (path.match(/^\/api\/global-sellers\/[^/]+\/cbts\/count$/) && method === 'GET') {
+        response = await getCBTsCountHandler(request, env);
+      } else if (path.match(/^\/api\/global-sellers\/[^/]+\/cbts\/saved$/) && method === 'GET') {
+        response = await getSavedCBTsHandler(request, env);
+      } else if (path.match(/^\/api\/global-sellers\/[^/]+\/cbts\/save$/) && method === 'POST') {
+        response = await saveCBTsHandler(request, env);
+      } else if (path.match(/^\/api\/global-sellers\/[^/]+\/cbts\/fetch$/) && method === 'GET') {
+        response = await fetchCBTsHandler(request, env);
+      } else if (path.match(/^\/api\/global-sellers\/[^/]+\/cbts\/[^/]+\/sync$/) && method === 'POST') {
+        response = await syncIndividualCBTHandler(request, env);
+      } else if (path.match(/^\/api\/global-sellers\/[^/]+\/cbts\/sync-all$/) && method === 'POST') {
+        response = await syncAllCBTsHandler(request, env);
+        // Use waitUntil to ensure background process continues
+        if (ctx && (response as any).backgroundPromise) {
+          ctx.waitUntil((response as any).backgroundPromise);
+        }
+      } else if (path.match(/^\/api\/global-sellers\/[^/]+\/cbts\/sync-all\/pause$/) && method === 'POST') {
+        response = await pauseSyncAllCBTsHandler(request, env);
+      } else if (path.match(/^\/api\/global-sellers\/[^/]+\/cbts\/sync-all\/resume$/) && method === 'POST') {
+        response = await resumeSyncAllCBTsHandler(request, env);
+      } else if (path.match(/^\/api\/global-sellers\/[^/]+\/cbts\/sync-all\/stop$/) && method === 'POST') {
+        response = await stopSyncAllCBTsHandler(request, env);
+      } else if (path.match(/^\/api\/global-sellers\/[^/]+\/cbts\/continue-sync$/) && method === 'POST') {
+        response = await continueSyncCBTsHandler(request, env);
+        // Use waitUntil to ensure background process continues
+        if (ctx && (response as any).backgroundPromise) {
+          ctx.waitUntil((response as any).backgroundPromise);
+        }
       } else if (path.startsWith('/api/global-sellers/') && method === 'GET') {
         response = await getGlobalSellerByIdHandler(request, env);
       } else if (path === '/api/global-sellers' && method === 'POST') {
         response = await createGlobalSellerHandler(request, env);
       } else if (path.startsWith('/api/global-sellers/') && method === 'PUT') {
         response = await updateGlobalSellerHandler(request, env);
+      } else if (path.match(/^\/api\/global-sellers\/[^/]+\/clear$/) && method === 'POST') {
+        response = await clearGlobalSellerHandler(request, env);
       } else if (path.startsWith('/api/global-sellers/') && method === 'DELETE') {
         response = await deleteGlobalSellerHandler(request, env);
       } else if (path === '/dashboard' && method === 'GET') {

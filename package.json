@@ -9,6 +9,12 @@
     "db:migrate": "wrangler d1 migrations apply orbix-db",
     "db:migrate:local": "wrangler d1 migrations apply orbix-db --local",
     "db:create": "wrangler d1 create orbix-db",
+    "db:export": "bash scripts/export-db.sh",
+    "db:export:prod": "bash scripts/export-db-prod.sh",
+    "db:migrate:items": "bash scripts/migrate-items-to-prod.sh",
+    "db:migrate:incremental": "bash scripts/migrate-incremental.sh",
+    "db:migrate:data": "bash scripts/migrate-items-simple.sh",
+    "db:migrate:data:incremental": "node scripts/migrate-data-to-prod.js --incremental",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [
