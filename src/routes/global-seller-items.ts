@@ -2245,8 +2245,8 @@ export async function syncCBTsHandler(request: Request, env: Env): Promise<Respo
 
       } catch (error) {
         fetchErrorCount++;
-        console.error(`[SYNC CBTS] ❌ Error on page ${pageCount + 1}:`, error);
-        console.error(`[SYNC CBTS] ❌ Error details:`, error instanceof Error ? error.message : String(error));
+        logger.error(`[SYNC CBTS] ❌ Error on page ${pageCount + 1}:`, error);
+        logger.error(`[SYNC CBTS] ❌ Error details:`, error instanceof Error ? error.message : String(error));
         
         // Check if it's a token expiration error (401)
         // ML API returns: { "code": "unauthorized", "message": "invalid access token" } with status 401
@@ -2510,10 +2510,9 @@ export async function syncCBTsHandler(request: Request, env: Env): Promise<Respo
 
           } catch (error) {
             fetchErrorCount++;
-            logger.error(`[SYNC CBTS] ✗ Error on page ${pageCount + 1}:`, error);
-            console.error(`[SYNC CBTS] ❌ Error on page ${pageCount + 1}:`, error);
-            console.error(`[SYNC CBTS] ❌ Error details:`, error instanceof Error ? error.message : String(error));
-            console.error(`[SYNC CBTS] ❌ Error stack:`, error instanceof Error ? error.stack : 'No stack');
+            logger.error(`[SYNC CBTS] ❌ Error on page ${pageCount + 1}:`, error);
+            logger.error(`[SYNC CBTS] ❌ Error details:`, error instanceof Error ? error.message : String(error));
+            logger.error(`[SYNC CBTS] ❌ Error stack:`, error instanceof Error ? error.stack : 'No stack');
             
             // Check if it's a scroll_id expiration error (400 with scroll_id message)
             // ML API returns 400 with message about scroll_id when it expires
@@ -2535,10 +2534,10 @@ export async function syncCBTsHandler(request: Request, env: Env): Promise<Respo
             // IMPORTANT: When ML returns error 400 for scroll_id, we must make a NEW INITIAL REQUEST (without scroll_id)
             // However, we'll filter duplicates using the database to continue from where we left off
             if (isScrollIdError) {
-              console.warn(`[SYNC CBTS] ⏱️⏱️⏱️ SCROLL_ID EXPIRED (NOT TOKEN ERROR) ⏱️⏱️⏱️`);
-              console.warn(`[SYNC CBTS] 📋 Error: ${errorMsg}`);
-              console.warn(`[SYNC CBTS] 🔄 ML rejected scroll_id - making NEW INITIAL REQUEST to get fresh scroll_id...`);
-              console.warn(`[SYNC CBTS] ⚠️ Note: New request will start from beginning, but duplicates will be filtered by database`);
+              logger.warn(`[SYNC CBTS] ⏱️⏱️⏱️ SCROLL_ID EXPIRED (NOT TOKEN ERROR) ⏱️⏱️⏱️`);
+              logger.warn(`[SYNC CBTS] 📋 Error: ${errorMsg}`);
+              logger.warn(`[SYNC CBTS] 🔄 ML rejected scroll_id - making NEW INITIAL REQUEST to get fresh scroll_id...`);
+              logger.warn(`[SYNC CBTS] ⚠️ Note: New request will start from beginning, but duplicates will be filtered by database`);
               logger.warn(`[SYNC CBTS] Scroll ID expired (error 400) - making new initial request to get fresh scroll_id (page ${pageCount + 1})`);
               
               // Reset scroll_id to null - next call will be WITHOUT scroll_id (new initial request)
@@ -2561,9 +2560,9 @@ export async function syncCBTsHandler(request: Request, env: Env): Promise<Respo
             
             // Handle token expiration: pause and notify user
             if (isTokenError) {
-              console.error(`[SYNC CBTS] 🔑🔑🔑 TOKEN EXPIRED OR INVALID (NOT SCROLL_ID) 🔑🔑🔑`);
-              console.error(`[SYNC CBTS] 📋 Error: ${errorMsg}`);
-              console.error(`[SYNC CBTS] ⏸️ Pausing sync - token needs to be refreshed by user`);
+              logger.error(`[SYNC CBTS] 🔑🔑🔑 TOKEN EXPIRED OR INVALID (NOT SCROLL_ID) 🔑🔑🔑`);
+              logger.error(`[SYNC CBTS] 📋 Error: ${errorMsg}`);
+              logger.error(`[SYNC CBTS] ⏸️ Pausing sync - token needs to be refreshed by user`);
               logger.error(`[SYNC CBTS] Token expired - pausing sync (page ${pageCount + 1}, total saved: ${totalSaved})`);
               
               // IMPORTANT: Ensure all processed CBTs are saved before pausing
@@ -2574,13 +2573,13 @@ export async function syncCBTsHandler(request: Request, env: Env): Promise<Respo
 // console.log(`[SYNC CBTS] 📊 Total processed in this sync: ${totalSaved.toLocaleString()} CBTs`);
                 
                 if (finalCount < totalSaved) {
-                  console.warn(`[SYNC CBTS] ⚠️ Warning: Database count (${finalCount}) is less than processed count (${totalSaved})`);
-                  console.warn(`[SYNC CBTS] ⚠️ This might indicate some CBTs weren't saved. However, duplicates are handled by ON CONFLICT.`);
+                  logger.warn(`[SYNC CBTS] ⚠️ Warning: Database count (${finalCount}) is less than processed count (${totalSaved})`);
+                  logger.warn(`[SYNC CBTS] ⚠️ This might indicate some CBTs weren't saved. However, duplicates are handled by ON CONFLICT.`);
                 } else {
 // console.log(`[SYNC CBTS] ✅ All processed CBTs are safely saved in database`);
                 }
               } catch (verifyError) {
-                console.error(`[SYNC CBTS] ❌ Error verifying final count:`, verifyError);
+                logger.error(`[SYNC CBTS] ❌ Error verifying final count:`, verifyError);
                 // Continue anyway - the CBTs should already be saved from previous pages
               }
               
@@ -2608,7 +2607,7 @@ export async function syncCBTsHandler(request: Request, env: Env): Promise<Respo
                 // For now, we'll throw a special error that the frontend can catch
                 throw new Error('TOKEN_EXPIRED:SYNC_PAUSED:' + JSON.stringify(syncState));
               } catch (stateError) {
-                console.error(`[SYNC CBTS] ❌ Error saving sync state:`, stateError);
+                logger.error(`[SYNC CBTS] ❌ Error saving sync state:`, stateError);
               }
               
               hasMore = false;
@@ -2617,7 +2616,7 @@ export async function syncCBTsHandler(request: Request, env: Env): Promise<Respo
             
             // Stop after too many errors
             if (fetchErrorCount >= MAX_ERRORS) {
-              console.error(`[SYNC CBTS] ❌ Stopped after ${MAX_ERRORS} consecutive errors`);
+              logger.error(`[SYNC CBTS] ❌ Stopped after ${MAX_ERRORS} consecutive errors`);
               
               // IMPORTANT: Ensure all processed CBTs are saved before stopping
               try {
@@ -2627,13 +2626,13 @@ export async function syncCBTsHandler(request: Request, env: Env): Promise<Respo
 // console.log(`[SYNC CBTS] 📊 Total processed in this sync: ${totalSaved.toLocaleString()} CBTs`);
                 
                 if (finalCount < totalSaved) {
-                  console.warn(`[SYNC CBTS] ⚠️ Warning: Database count (${finalCount}) is less than processed count (${totalSaved})`);
-                  console.warn(`[SYNC CBTS] ⚠️ This might indicate some CBTs weren't saved. However, duplicates are handled by ON CONFLICT.`);
+                  logger.warn(`[SYNC CBTS] ⚠️ Warning: Database count (${finalCount}) is less than processed count (${totalSaved})`);
+                  logger.warn(`[SYNC CBTS] ⚠️ This might indicate some CBTs weren't saved. However, duplicates are handled by ON CONFLICT.`);
                 } else {
 // console.log(`[SYNC CBTS] ✅ All processed CBTs are safely saved in database`);
                 }
               } catch (verifyError) {
-                console.error(`[SYNC CBTS] ❌ Error verifying final count:`, verifyError);
+                logger.error(`[SYNC CBTS] ❌ Error verifying final count:`, verifyError);
                 // Continue anyway - the CBTs should already be saved from previous pages
               }
               
@@ -2667,17 +2666,17 @@ export async function syncCBTsHandler(request: Request, env: Env): Promise<Respo
 // console.log(`[SYNC CBTS] ℹ️ Note: Database count may be less than processed count due to duplicates (normal behavior)`);
             }
           } catch (verifyError) {
-            console.error(`[SYNC CBTS] ❌ Error in final verification:`, verifyError);
+            logger.error(`[SYNC CBTS] ❌ Error in final verification:`, verifyError);
             logger.info(`[SYNC CBTS] Sync complete: ${totalSaved} CBTs saved in ${duration}s`);
 // console.log(`[SYNC CBTS] ✅✅✅ SYNC COMPLETE: ${totalSaved} CBTs saved in ${duration}s ✅✅✅`);
 // console.log(`[SYNC CBTS] 📊 Final stats: ${pageCount} pages processed, ${totalSaved} CBTs saved${maxItems ? ` (limit: ${maxItems})` : ''}`);
           }
         } catch (error) {
           logger.error('[SYNC CBTS] Error in background sync:', error);
-          console.error('[SYNC CBTS] ❌❌❌ ERROR IN BACKGROUND SYNC:', error);
-          console.error('[SYNC CBTS] ❌ Error message:', error instanceof Error ? error.message : String(error));
-          console.error('[SYNC CBTS] ❌ Error stack:', error instanceof Error ? error.stack : 'No stack');
-          console.error('[SYNC CBTS] ❌ Error occurred at page:', pageCount + 1, 'totalSaved:', totalSaved);
+          logger.error('[SYNC CBTS] ❌❌❌ ERROR IN BACKGROUND SYNC:', error);
+          logger.error('[SYNC CBTS] ❌ Error message:', error instanceof Error ? error.message : String(error));
+          logger.error('[SYNC CBTS] ❌ Error stack:', error instanceof Error ? error.stack : 'No stack');
+          logger.error('[SYNC CBTS] ❌ Error occurred at page:', pageCount + 1, 'totalSaved:', totalSaved);
           
           // IMPORTANT: Final verification that all processed CBTs are saved
           try {
@@ -2687,13 +2686,13 @@ export async function syncCBTsHandler(request: Request, env: Env): Promise<Respo
 // console.log(`[SYNC CBTS] 📊 Total processed in this sync: ${totalSaved.toLocaleString()} CBTs`);
             
             if (finalCount < totalSaved) {
-              console.warn(`[SYNC CBTS] ⚠️ Warning: Database count (${finalCount}) is less than processed count (${totalSaved})`);
-              console.warn(`[SYNC CBTS] ⚠️ This might indicate some CBTs weren't saved. However, duplicates are handled by ON CONFLICT.`);
+              logger.warn(`[SYNC CBTS] ⚠️ Warning: Database count (${finalCount}) is less than processed count (${totalSaved})`);
+              logger.warn(`[SYNC CBTS] ⚠️ This might indicate some CBTs weren't saved. However, duplicates are handled by ON CONFLICT.`);
             } else {
 // console.log(`[SYNC CBTS] ✅ All processed CBTs are safely saved in database before error`);
             }
           } catch (verifyError) {
-            console.error(`[SYNC CBTS] ❌ Error in final verification:`, verifyError);
+            logger.error(`[SYNC CBTS] ❌ Error in final verification:`, verifyError);
             // Continue anyway - the CBTs should already be saved from previous pages
           }
           
@@ -2704,26 +2703,26 @@ export async function syncCBTsHandler(request: Request, env: Env): Promise<Respo
             const syncStateJson = errorMsg.replace('TOKEN_EXPIRED:SYNC_PAUSED:', '');
             try {
               const syncState = JSON.parse(syncStateJson);
-              console.error(`[SYNC CBTS] 🔑 Token expired - sync paused at page ${syncState.pageCount}, total saved: ${syncState.totalSaved}`);
-              console.error(`[SYNC CBTS] 💾 Final database count when paused: ${syncState.finalDbCount?.toLocaleString() || 'unknown'} CBTs`);
+              logger.error(`[SYNC CBTS] 🔑 Token expired - sync paused at page ${syncState.pageCount}, total saved: ${syncState.totalSaved}`);
+              logger.error(`[SYNC CBTS] 💾 Final database count when paused: ${syncState.finalDbCount?.toLocaleString() || 'unknown'} CBTs`);
               // Store sync state in global seller for resumption
               // We'll need to add a method to store this, but for now we'll log it
               // The frontend will need to poll for sync status and detect token expiration
             } catch (parseError) {
-              console.error(`[SYNC CBTS] ❌ Error parsing sync state:`, parseError);
+              logger.error(`[SYNC CBTS] ❌ Error parsing sync state:`, parseError);
             }
           }
         }
       })();
       
       backgroundSyncPromise.catch(err => {
-        console.error(`[SYNC CBTS] ❌❌❌ Background sync promise rejected:`, err);
+        logger.error(`[SYNC CBTS] ❌❌❌ Background sync promise rejected:`, err);
         logger.error(`[SYNC CBTS] Background sync promise rejected:`, err);
         
         // Check if it's a token expiration error
         const errorMsg = err instanceof Error ? err.message : String(err);
         if (errorMsg.startsWith('TOKEN_EXPIRED:SYNC_PAUSED:')) {
-          console.error(`[SYNC CBTS] 🔑 Token expired - sync paused`);
+          logger.error(`[SYNC CBTS] 🔑 Token expired - sync paused`);
           // The error will be logged but we can't directly communicate with frontend from here
           // The frontend will need to poll for sync status or detect via other means
         }
@@ -2746,9 +2745,9 @@ export async function syncCBTsHandler(request: Request, env: Env): Promise<Respo
     
     return response;
   } catch (error) {
-    console.error(`[SYNC CBTS HANDLER] ❌❌❌ ERROR CAUGHT:`, error);
-    console.error(`[SYNC CBTS HANDLER] ❌ Error message:`, error instanceof Error ? error.message : String(error));
-    console.error(`[SYNC CBTS HANDLER] ❌ Error stack:`, error instanceof Error ? error.stack : 'No stack');
+    logger.error(`[SYNC CBTS HANDLER] ❌❌❌ ERROR CAUGHT:`, error);
+    logger.error(`[SYNC CBTS HANDLER] ❌ Error message:`, error instanceof Error ? error.message : String(error));
+    logger.error(`[SYNC CBTS HANDLER] ❌ Error stack:`, error instanceof Error ? error.stack : 'No stack');
     logger.error('[SYNC CBTS] Error:', error);
     if (error instanceof Error && error.message === 'Unauthorized') {
       return errorResponse('Unauthorized', 401, 'UNAUTHORIZED');
@@ -3113,7 +3112,7 @@ export async function fetchCBTsHandler(request: Request, env: Env): Promise<Resp
     });
   } catch (error) {
     logger.error('[FETCH CBTS] Error:', error);
-    console.error('[FETCH CBTS] ❌ Error:', error);
+    logger.error('[FETCH CBTS] ❌ Error:', error);
     if (error instanceof Error && error.message === 'Unauthorized') {
       return errorResponse('Unauthorized', 401, 'UNAUTHORIZED');
     }
@@ -3201,7 +3200,7 @@ export async function saveCBTsHandler(request: Request, env: Env): Promise<Respo
 // console.log(`[SAVE CBTS] ✅ Saved batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(itemsToSave.length / batchSize)} (${batch.length} items)`);
       } catch (error) {
         logger.error(`[SAVE CBTS] Error saving batch:`, error);
-        console.error(`[SAVE CBTS] ❌ Error saving batch:`, error);
+        logger.error(`[SAVE CBTS] ❌ Error saving batch:`, error);
         throw error;
       }
     }
@@ -3605,13 +3604,13 @@ export async function syncAllCBTsHandler(request: Request, env: Env): Promise<Re
                 retryCount++;
                 
                 if (retryCount >= MAX_RATE_LIMIT_RETRIES) {
-                  console.error(`[SYNC ALL CBTS] ❌ Rate limit exceeded for batch ${batchIndex + 1} after ${retryCount} retries`);
+                  logger.error(`[SYNC ALL CBTS] ❌ Rate limit exceeded for batch ${batchIndex + 1} after ${retryCount} retries`);
                   throw error;
                 }
                 
                 // Wait longer for rate limit (exponential backoff)
                 const waitTime = Math.min(1000 * Math.pow(2, retryCount), 30000); // Max 30 seconds
-                console.warn(`[SYNC ALL CBTS] ⏳ Rate limit detected, waiting ${waitTime}ms before retry ${retryCount}/${MAX_RATE_LIMIT_RETRIES}...`);
+                logger.warn(`[SYNC ALL CBTS] ⏳ Rate limit detected, waiting ${waitTime}ms before retry ${retryCount}/${MAX_RATE_LIMIT_RETRIES}...`);
                 await new Promise(resolve => setTimeout(resolve, waitTime));
                 continue; // Retry
               }
@@ -3621,8 +3620,8 @@ export async function syncAllCBTsHandler(request: Request, env: Env): Promise<Re
                   errorMsg.includes('Unauthorized') || 
                   errorMsg.includes('unauthorized') ||
                   errorMsg.includes('invalid access token')) {
-                console.error(`[SYNC ALL CBTS] 🔑🔑🔑 TOKEN EXPIRED 🔑🔑🔑`);
-                console.error(`[SYNC ALL CBTS] ⏸️ Pausing sync - token needs to be refreshed`);
+                logger.error(`[SYNC ALL CBTS] 🔑🔑🔑 TOKEN EXPIRED 🔑🔑🔑`);
+                logger.error(`[SYNC ALL CBTS] ⏸️ Pausing sync - token needs to be refreshed`);
                 tokenExpired = true;
                 throw new Error('TOKEN_EXPIRED:SYNC_PAUSED:' + JSON.stringify({
                   paused: true,
@@ -3643,7 +3642,7 @@ export async function syncAllCBTsHandler(request: Request, env: Env): Promise<Re
 
           // Verify bulkResults was successfully obtained
           if (!bulkResults || bulkResults.length === 0) {
-            console.warn(`[SYNC ALL CBTS] ⚠️ No results returned for batch ${batchIndex + 1}`);
+            logger.warn(`[SYNC ALL CBTS] ⚠️ No results returned for batch ${batchIndex + 1}`);
             failedCount += batch.length;
             continue;
           }
@@ -3718,7 +3717,7 @@ export async function syncAllCBTsHandler(request: Request, env: Env): Promise<Re
                 failedCount++;
                 const errorMsg = result.message || `HTTP ${result.code}`;
                 errors.push({ cbtId, error: errorMsg });
-                console.warn(`[SYNC ALL CBTS] ⚠️ Failed to sync CBT ${cbtId}: ${errorMsg}`);
+                logger.warn(`[SYNC ALL CBTS] ⚠️ Failed to sync CBT ${cbtId}: ${errorMsg}`);
                 logger.warn(`[SYNC ALL CBTS] Failed to sync CBT ${cbtId} in batch: ${errorMsg}`);
                 
                 // Save error in metadata
@@ -3761,14 +3760,14 @@ export async function syncAllCBTsHandler(request: Request, env: Env): Promise<Re
                   
                   await itemRepo.upsert(itemToUpdate);
                 } catch (updateError) {
-                  console.error(`[SYNC ALL CBTS] Failed to update error log for CBT ${cbtId}:`, updateError);
+                  logger.error(`[SYNC ALL CBTS] Failed to update error log for CBT ${cbtId}:`, updateError);
                 }
               }
             } catch (error) {
               failedCount++;
               const errorMsg = error instanceof Error ? error.message : String(error);
               errors.push({ cbtId, error: errorMsg });
-              console.error(`[SYNC ALL CBTS] ❌ Error processing CBT ${cbtId} in batch:`, errorMsg);
+              logger.error(`[SYNC ALL CBTS] ❌ Error processing CBT ${cbtId} in batch:`, errorMsg);
               logger.warn(`[SYNC ALL CBTS] Error processing CBT ${cbtId} in batch: ${errorMsg}`);
               
               // Save error in metadata
@@ -3811,7 +3810,7 @@ export async function syncAllCBTsHandler(request: Request, env: Env): Promise<Re
                 
                 await itemRepo.upsert(itemToUpdate);
               } catch (updateError) {
-                console.error(`[SYNC ALL CBTS] Failed to update error log for CBT ${cbtId}:`, updateError);
+                logger.error(`[SYNC ALL CBTS] Failed to update error log for CBT ${cbtId}:`, updateError);
               }
             }
           }
@@ -3826,7 +3825,7 @@ export async function syncAllCBTsHandler(request: Request, env: Env): Promise<Re
           
           // Check if it's a token expiration error
           if (errorMsg.startsWith('TOKEN_EXPIRED:SYNC_PAUSED:')) {
-            console.error(`[SYNC ALL CBTS] 🔑 Token expired - stopping sync`);
+            logger.error(`[SYNC ALL CBTS] 🔑 Token expired - stopping sync`);
             logger.error(`[SYNC ALL CBTS] Token expired - sync paused at batch ${batchIndex + 1}/${batches.length} (${syncedCount}/${totalCBTs} CBTs)`);
             // Mark all remaining items in batch as failed
             for (const cbtId of batch) {
@@ -3841,7 +3840,7 @@ export async function syncAllCBTsHandler(request: Request, env: Env): Promise<Re
             errors.push({ cbtId, error: errorMsg });
             failedCount++;
           }
-          console.error(`[SYNC ALL CBTS] ❌ Error processing batch ${batchIndex + 1}:`, errorMsg);
+          logger.error(`[SYNC ALL CBTS] ❌ Error processing batch ${batchIndex + 1}:`, errorMsg);
           logger.warn(`[SYNC ALL CBTS] Failed to process batch ${batchIndex + 1}: ${errorMsg}`);
           
           // Continue with next batch even if one fails
@@ -3861,8 +3860,8 @@ export async function syncAllCBTsHandler(request: Request, env: Env): Promise<Re
         // Clear state so it can be restarted fresh
         syncAllState.delete(globalSeller.id);
       } else if (tokenExpired) {
-        console.error(`[SYNC ALL CBTS] ⏸️ Sync paused due to token expiration`);
-        console.error(`[SYNC ALL CBTS] 📊 Synced: ${syncedCount}/${totalCBTs}, Failed: ${failedCount}, Rate limits: ${rateLimitCount}`);
+        logger.error(`[SYNC ALL CBTS] ⏸️ Sync paused due to token expiration`);
+        logger.error(`[SYNC ALL CBTS] 📊 Synced: ${syncedCount}/${totalCBTs}, Failed: ${failedCount}, Rate limits: ${rateLimitCount}`);
         logger.error(`[SYNC ALL CBTS] Sync paused: ${syncedCount}/${totalCBTs} CBTs synced, token expired`);
         // Keep state so it can be resumed
       } else {
@@ -4244,7 +4243,7 @@ export async function continueSyncCBTsHandler(request: Request, env: Env): Promi
           // Process results (same logic as syncAllCBTsHandler)
           // Note: bulkResults might be undefined if we're retrying after a network error
           if (!bulkResults) {
-            console.error(`[CONTINUE SYNC CBTS] No results to process for batch ${batchIndex + 1}`);
+            logger.error(`[CONTINUE SYNC CBTS] No results to process for batch ${batchIndex + 1}`);
             continue; // Skip to next batch
           }
           
@@ -4425,7 +4424,7 @@ export async function continueSyncCBTsHandler(request: Request, env: Env): Promi
                 break;
               } catch (retryError) {
                 const retryErrorMsg = retryError instanceof Error ? retryError.message : String(retryError);
-                console.error(`[CONTINUE SYNC CBTS] ❌ Batch ${batchIndex + 1} retry ${batchRetryCount} failed:`, retryErrorMsg);
+                logger.error(`[CONTINUE SYNC CBTS] ❌ Batch ${batchIndex + 1} retry ${batchRetryCount} failed:`, retryErrorMsg);
                 if (batchRetryCount >= MAX_BATCH_RETRIES) {
                   // Max retries reached, mark all items as failed
                   logger.error(`[CONTINUE SYNC CBTS] Max batch retries reached for batch ${batchIndex + 1}`);
@@ -4575,7 +4574,7 @@ export async function continueSyncCBTsHandler(request: Request, env: Env): Promi
           } else {
             // Log error but continue with next batch
             logger.error(`[CONTINUE SYNC CBTS] Error processing batch ${batchIndex + 1}:`, error);
-            console.error(`[CONTINUE SYNC CBTS] ❌ Error processing batch ${batchIndex + 1}:`, errorMsg);
+            logger.error(`[CONTINUE SYNC CBTS] ❌ Error processing batch ${batchIndex + 1}:`, errorMsg);
             
             // Mark all items in batch as failed
             for (const cbtId of batch) {

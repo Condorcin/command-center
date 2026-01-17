@@ -13,6 +13,8 @@ import { logger } from './utils/logger';
 
 export interface Env {
   DB: D1Database;
+  ENVIRONMENT?: string;
+  NODE_ENV?: string;
 }
 
 /**
@@ -20,6 +22,10 @@ export interface Env {
  */
 export default {
   async fetch(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
+    // Initialize logger with environment configuration
+    // This allows the logger to check ENVIRONMENT variable from wrangler.toml
+    logger.initialize(env);
+
     const url = new URL(request.url);
     const path = url.pathname;
     const method = request.method;
