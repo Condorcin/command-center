@@ -69,5 +69,22 @@ export interface Item {
   metadata: string | null; // JSON string with complete ML API response
 }
 
+export interface MarketplaceItem {
+  id: string;
+  item_id: string; // References items.id
+  global_seller_id: string;
+  ml_item_id: string; // The marketplace item ID (e.g., MLC1818643789)
+  site_id: string; // The country site (e.g., MLC, MCO, MLB, MLM)
+  date_created: string | null; // ISO date string from ML API
+  created_at: number;
+  updated_at: number;
+  // Performance/Quality Score fields
+  performance_score?: number | null; // Quality score from 0 to 100
+  performance_level?: string | null; // 'Bad', 'Average', 'Good'
+  performance_level_wording?: string | null; // Localized name (e.g., 'Profesional')
+  performance_calculated_at?: string | null; // ISO 8601 timestamp
+  performance_data?: string | null; // Complete JSON response from ML API
+}
+
 export type UserRole = 'operator' | 'admin' | 'super_admin';
 

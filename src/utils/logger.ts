@@ -20,7 +20,7 @@ class LoggerImpl implements Logger {
     // In Cloudflare Workers, we don't have process.env
     // Logs are controlled by log level - debug/info only in development
     // For production, set this to false to disable debug/info logs
-    this.isDevelopment = false; // Set to true for development debugging
+    this.isDevelopment = true; // Set to true for development debugging
   }
 
   private shouldLog(level: LogLevel): boolean {

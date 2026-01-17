@@ -90,15 +90,30 @@ npm run deploy
 
 ## 🔐 Endpoints
 
-### Autenticación
+Para documentación completa de la API REST, incluyendo todos los endpoints, modelos de datos, ejemplos de request/response y códigos de estado, consulta [API_DOCUMENTATION.md](./API_DOCUMENTATION.md).
 
+### Endpoints Principales
+
+**Autenticación:**
 - `POST /auth/signup` - Registrar nuevo usuario
 - `POST /auth/login` - Iniciar sesión
 - `POST /auth/logout` - Cerrar sesión
 - `GET /auth/me` - Obtener usuario actual
 
-### Páginas
+**Global Sellers:**
+- `GET /api/global-sellers` - Listar global sellers
+- `POST /api/global-sellers` - Crear global seller
+- `GET /api/global-sellers/:id` - Obtener global seller
+- `PUT /api/global-sellers/:id` - Actualizar global seller
+- `DELETE /api/global-sellers/:id` - Eliminar global seller
 
+**CBTs / Items:**
+- `GET /api/global-sellers/:id/cbts/saved` - Obtener CBTs guardados (con paginación)
+- `POST /api/global-sellers/:id/cbts/sync` - Sincronizar CBTs desde ML
+- `POST /api/global-sellers/:id/cbts/sync-all` - Sincronizar todos los CBTs
+- `POST /api/global-sellers/:id/cbts/continue-sync` - Continuar sincronización
+
+**Páginas:**
 - `GET /` - Redirige a login o dashboard
 - `GET /auth/login` - Página de login
 - `GET /dashboard` - Dashboard (requiere autenticación)
@@ -111,9 +126,12 @@ npm run deploy
 - Sesiones con expiración (7 días)
 - Protección de rutas privadas
 
-## 📝 Notas Técnicas
+## 📝 Documentación
 
-Ver [ARCHITECTURE.md](./ARCHITECTURE.md) para detalles sobre decisiones de arquitectura.
+- [API_DOCUMENTATION.md](./API_DOCUMENTATION.md) - Documentación completa de la API REST
+- [ARCHITECTURE.md](./ARCHITECTURE.md) - Decisiones de arquitectura
+- [SYNC_CBTS_GUIDE.md](./SYNC_CBTS_GUIDE.md) - Guía de sincronización de CBTs
+- [MIGRATION_GUIDE.md](./MIGRATION_GUIDE.md) - Guía de migración de base de datos
 
 ## 🎯 Próximos Pasos
 

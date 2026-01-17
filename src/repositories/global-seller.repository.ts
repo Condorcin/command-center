@@ -185,6 +185,44 @@ export class GlobalSellerRepository {
   }
 
   /**
+   * Clear all Mercado Libre data from a global seller
+   * This resets the global seller to a clean state (like a new operator)
+   * Note: Uses empty strings instead of NULL for ml_user_id and ml_access_token
+   * because they have NOT NULL constraints in the database
+   */
+  async clearMLData(id: string): Promise<void> {
+    const now = Math.floor(Date.now() / 1000);
+
+    await this.db
+      .prepare(`
+        UPDATE global_sellers SET 
+          ml_user_id = '',
+          ml_access_token = '',
+          ml_nickname = NULL,
+          ml_email = NULL,
+          ml_first_name = NULL,
+          ml_last_name = NULL,
+          ml_country_id = NULL,
+          ml_site_id = NULL,
+          ml_registration_date = NULL,
+          ml_phone = NULL,
+          ml_address = NULL,
+          ml_city = NULL,
+          ml_state = NULL,
+          ml_zip_code = NULL,
+          ml_tax_id = NULL,
+          ml_corporate_name = NULL,
+          ml_brand_name = NULL,
+          ml_seller_experience = NULL,
+          ml_info_updated_at = NULL,
+          updated_at = ?
+        WHERE id = ?
+      `)
+      .bind(now, id)
+      .run();
+  }
+
+  /**
    * Delete a global seller
    */
   async delete(id: string): Promise<void> {
